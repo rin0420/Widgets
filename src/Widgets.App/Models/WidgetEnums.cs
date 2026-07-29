@@ -15,6 +15,10 @@ public enum WidgetKind
     Note,
     Astronomy,
     WorldClock,
+    CpuMonitor,
+    GpuMonitor,
+    NetworkMonitor,
+    DiskMonitor,
 }
 
 /// <summary>

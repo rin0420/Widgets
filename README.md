@@ -12,18 +12,27 @@ WinUI 3 / Windows App SDK 1.8 / .NET 9 で実装されています。
 
 ## 特徴
 
-### 12 種類のウィジェット
+### 16 種類のウィジェット
 
 | カテゴリ | ウィジェット |
 | --- | --- |
 | 時間 | デジタル時計 / アナログ時計 / 世界時計 / 日付 / カレンダー |
 | 情報 | 天気 / 天体（日の出・日の入り・月齢） / カウントダウン |
-| システム | システムモニター（CPU・メモリ・ディスク・ネットワーク） / バッテリー |
+| システム | システムモニター / CPU / GPU / ネットワーク / ディスク / バッテリー |
 | パーソナル | 写真（スライドショー対応） / メモ |
 
 ギャラリーから種類とサイズを選ぶと、そのままエディターへ進みます。
 
 ![ギャラリー](docs/gallery.png)
+
+### 充実したシステムモニタリング
+
+CPU・GPU・ネットワーク・ディスクを、それぞれ専用のウィジェットで詳しく確認できます。
+
+- **CPU** — コア別の負荷、クロック、プロセス数
+- **GPU** — 使用率と VRAM の使用量
+- **ネットワーク** — 通信速度の推移グラフと累計転送量
+- **ディスク** — 空き容量と読み書き速度
 
 ### 5 つのサイズ
 
@@ -99,11 +108,29 @@ dotnet build "src\Widgets.App\Widgets.App.csproj" -c Release
 dotnet run  --project "src\Widgets.App\Widgets.App.csproj" -c Release
 ```
 
-配布用の自己完結型ビルドを作る場合:
+## 配布用ビルド
 
 ```powershell
-dotnet publish "src\Widgets.App\Widgets.App.csproj" -c Release -r win-x64 --self-contained true
+pwsh -File tools\publish.ps1              # win-x64
+pwsh -File tools\publish.ps1 -Runtime win-arm64
 ```
+
+`dist\` に次のレイアウトで出力されます。
+
+```
+dist/
+├── Widgets.lnk   ← これをダブルクリックして起動
+├── はじめに.txt
+└── app/          ← 本体とランタイム一式（約 230 ファイル）
+    └── Widgets.exe
+```
+
+WinUI 3 は単一ファイル publish に対応していません（`PublishSingleFile=true` でもビルドは通りますが、
+`.xbf` リソースをバンドルから読めず起動時に `XamlParseException` で落ちます）。
+そのためランタイム一式は `app\` にまとめ、`dist\` の直下には起動用のショートカットだけを置いています。
+
+`dist` の Widgets が実行中だと publish は使用中のファイルを上書きできず失敗します。
+スクリプトは起動前にそれを検出して中断するので、`-StopRunning` を付けると自動で終了させてから続行します。
 
 ## データの保存場所
 
@@ -124,9 +151,12 @@ src/Widgets.App/
 ├── Interop/      Win32 / DWM 相互運用（重なり順・透明化・モニター情報）
 ├── Hosting/      デスクトップ上のウィジェットウィンドウとその管理
 ├── Controls/     WidgetSurface（枠・背景・テーマ適用の共通描画）
-├── Widgets/      12 種類のウィジェット描画
+├── Widgets/      16 種類のウィジェット描画
 ├── Views/        管理ウィンドウ（マイウィジェット / ギャラリー / テーマ / エディター / 設定）
 └── Themes/       共有スタイル
+
+tools/
+└── publish.ps1   配布用ビルド（dist の生成）
 ```
 
 ## 外部サービス

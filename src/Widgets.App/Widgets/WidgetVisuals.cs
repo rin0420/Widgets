@@ -243,33 +243,187 @@ internal static class WidgetVisuals
         }
     }
 
-    public static Polyline Spark(double width, double height, Color color) => new()
+    public static Polyline Spark(double width, double height, Color color, double thickness = 1.8) => new()
     {
         Width = width,
         Height = height,
         Stroke = new SolidColorBrush(color),
-        StrokeThickness = 1.8,
+        StrokeThickness = thickness,
         StrokeLineJoin = PenLineJoin.Round,
     };
 
     /// <summary>Plots <paramref name="samples"/> (0–1) left-to-right, oldest first.</summary>
     public static void SetSpark(Polyline line, IReadOnlyList<double> samples, int capacity)
-    {
-        var points = new PointCollection();
-        if (samples.Count >= 2)
-        {
-            var step = line.Width / Math.Max(1, capacity - 1);
-            var offset = line.Width - (samples.Count - 1) * step;
+        => line.Points = Plot(line.Width, line.Height, samples, capacity);
 
-            for (var i = 0; i < samples.Count; i++)
-            {
-                var y = line.Height - Math.Clamp(samples[i], 0, 1) * (line.Height - 2) - 1;
-                points.Add(new Windows.Foundation.Point(offset + i * step, y));
-            }
+    /// <summary>A filled counterpart to <see cref="Spark"/>, for graphs that want body under the line.</summary>
+    public static Polygon Area(double width, double height, Color color, double opacity = 0.28) => new()
+    {
+        Width = width,
+        Height = height,
+        Fill = new SolidColorBrush(ColorUtil.Fade(color, opacity)),
+    };
+
+    /// <summary>Plots <paramref name="samples"/> like <see cref="SetSpark"/>, closed along the baseline.</summary>
+    public static void SetArea(Polygon area, IReadOnlyList<double> samples, int capacity)
+    {
+        var points = Plot(area.Width, area.Height, samples, capacity);
+        if (points.Count >= 2)
+        {
+            // Drop down to the baseline and run back to the first sample so the shape closes.
+            points.Add(new Windows.Foundation.Point(points[^1].X, area.Height));
+            points.Add(new Windows.Foundation.Point(points[0].X, area.Height));
+        }
+        else
+        {
+            points.Clear();
         }
 
-        line.Points = points;
+        area.Points = points;
     }
+
+    /// <summary>
+    /// Maps 0–1 samples onto a polyline spanning the full width, newest sample at the right edge.
+    /// </summary>
+    private static PointCollection Plot(double width, double height, IReadOnlyList<double> samples, int capacity)
+    {
+        var points = new PointCollection();
+        if (samples.Count == 0)
+        {
+            return points;
+        }
+
+        var slots = Math.Max(2, capacity);
+        var take = Math.Min(samples.Count, slots);
+
+        // Index of the oldest sample that fits in the window; a longer history keeps its newest end.
+        var first = samples.Count - take;
+
+        // A just-placed widget has one or two samples, and drawing only those would leave the graph
+        // as a stub in the right-hand corner until the buffer fills a minute later. Holding the
+        // oldest reading across the empty part spans the full width immediately, and real history
+        // still scrolls in from the right.
+        var pad = slots - take;
+        var step = width / (slots - 1);
+
+        for (var i = 0; i < slots; i++)
+        {
+            var sample = samples[first + Math.Max(0, i - pad)];
+            var y = height - Math.Clamp(sample, 0, 1) * (height - 2) - 1;
+            points.Add(new Windows.Foundation.Point(i * step, y));
+        }
+
+        return points;
+    }
+
+    /// <summary>A bottom-anchored bar, for the per-core columns in the CPU widget.</summary>
+    public static Grid VBar(double width, double height, Color track, Color fill)
+    {
+        var radius = Math.Min(width, height) / 2;
+
+        var host = new Grid
+        {
+            Width = width,
+            Height = height,
+            VerticalAlignment = VerticalAlignment.Bottom,
+        };
+
+        host.Children.Add(new Border
+        {
+            Background = new SolidColorBrush(track),
+            CornerRadius = new CornerRadius(radius),
+        });
+
+        host.Children.Add(new Border
+        {
+            Background = new SolidColorBrush(fill),
+            CornerRadius = new CornerRadius(radius),
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Height = 0,
+        });
+
+        return host;
+    }
+
+    public static void SetVBar(Grid bar, double fraction)
+    {
+        if (bar.Children.Count > 1 && bar.Children[1] is Border fill)
+        {
+            fill.Height = Math.Max(0, bar.Height * Math.Clamp(fraction, 0, 1));
+        }
+    }
+
+    public static void SetVBarColor(Grid bar, Color fill) => SetBarColor(bar, fill);
+
+    /// <summary>Recolors the fill of a <see cref="Bar"/> or <see cref="VBar"/> in place.</summary>
+    public static void SetBarColor(Grid bar, Color fill)
+    {
+        if (bar.Children.Count > 1 && bar.Children[1] is Border { Background: SolidColorBrush brush })
+        {
+            brush.Color = fill;
+        }
+    }
+
+    // ---- Formatting -----------------------------------------------------------
+
+    /// <summary>
+    /// Gauge color for a load level: accent normally, warning past 75%, danger past 90%.
+    /// Pass <paramref name="enabled"/> = false to keep the theme accent at every level.
+    /// </summary>
+    public static Color LoadColor(WidgetTheme theme, double fraction, bool enabled = true)
+        => !enabled ? Accent(theme)
+            : fraction >= 0.90 ? DangerColor
+            : fraction >= 0.75 ? WarningColor
+            : Accent(theme);
+
+    /// <summary>Network throughput, in the bits-per-second units link speeds are quoted in.</summary>
+    public static string FormatBitrate(double kbps)
+    {
+        kbps = Math.Max(0, kbps);
+        return kbps >= 1_000_000 ? Fixed(kbps / 1_000_000, 2) + " Gbps"
+            : kbps >= 1_000 ? Fixed(kbps / 1_000, 1) + " Mbps"
+            : Fixed(kbps, 0) + " kbps";
+    }
+
+    /// <summary>Disk and network throughput in bytes, the unit file transfers are measured in.</summary>
+    public static string FormatByteRate(double bytesPerSec)
+    {
+        const double kb = 1024.0;
+        bytesPerSec = Math.Max(0, bytesPerSec);
+
+        return bytesPerSec >= kb * kb * kb ? Fixed(bytesPerSec / (kb * kb * kb), 2) + " GB/s"
+            : bytesPerSec >= kb * kb ? Fixed(bytesPerSec / (kb * kb), 1) + " MB/s"
+            : Fixed(bytesPerSec / kb, 0) + " KB/s";
+    }
+
+    /// <summary>Capacity, scaled down to MB or up to TB so it always reads as 3–4 characters.</summary>
+    public static string FormatGb(double gb)
+    {
+        gb = Math.Max(0, gb);
+        return gb >= 1024 ? Fixed(gb / 1024, 2) + " TB"
+            : gb >= 100 ? Fixed(gb, 0) + " GB"
+            : gb >= 1 ? Fixed(gb, 1) + " GB"
+            : Fixed(gb * 1024, 0) + " MB";
+    }
+
+    public static string FormatClock(double mhz)
+        => mhz >= 1000 ? Fixed(mhz / 1000, 2) + " GHz" : Fixed(Math.Max(0, mhz), 0) + " MHz";
+
+    public static string FormatUptime(TimeSpan uptime)
+    {
+        if (uptime < TimeSpan.Zero)
+        {
+            uptime = TimeSpan.Zero;
+        }
+
+        return uptime.Days > 0 ? $"{uptime.Days}日 {uptime.Hours}時間"
+            : uptime.Hours > 0 ? $"{uptime.Hours}時間{uptime.Minutes}分"
+            : $"{uptime.Minutes}分";
+    }
+
+    private static string Fixed(double value, int decimals)
+        => value.ToString("F" + decimals.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                          System.Globalization.CultureInfo.InvariantCulture);
 
     public static double CelsiusToDisplay(double celsius, bool metric)
         => metric ? celsius : celsius * 9.0 / 5.0 + 32.0;

@@ -52,10 +52,32 @@ public static class WidgetSettingKeys
     public const string CountUp = "countUp";
 
     // System monitor / battery
-    public const string Metrics = "metrics";                 // comma-separated: cpu,ram,disk,net,gpu
+    public const string Metrics = "metrics";                 // comma-separated: cpu,ram,disk,net,gpu,diskio,proc,uptime
     public const string DriveLetter = "driveLetter";
     public const string ShowPercentageText = "showPercentageText";
     public const string GaugeStyle = "gaugeStyle";           // "Bar", "Ring", "Sparkline"
+    public const string ColorByLoad = "colorByLoad";         // recolor the gauge under high load
+
+    // CPU monitor
+    public const string CpuDisplayStyle = "cpuDisplayStyle"; // "Combined", "Cores", "Graph"
+    public const string ShowCoreGrid = "showCoreGrid";
+    public const string ShowCpuName = "showCpuName";
+    public const string ShowCpuClock = "showCpuClock";
+    public const string ShowProcessCount = "showProcessCount";
+
+    // GPU monitor
+    public const string ShowVram = "showVram";
+    public const string ShowGpuName = "showGpuName";
+
+    // Network monitor
+    public const string NetworkUnit = "networkUnit";                 // "Bits", "Bytes"
+    public const string NetworkScaleMode = "networkScaleMode";       // "Auto", "Fixed"
+    public const string NetworkFullScaleMbps = "networkFullScaleMbps";
+    public const string ShowNetworkTotals = "showNetworkTotals";
+
+    // Disk monitor
+    public const string ShowDiskIo = "showDiskIo";
+    public const string ShowAllDrives = "showAllDrives";
 
     // Photo
     public const string PhotoPath = "photoPath";
@@ -203,7 +225,7 @@ public static class WidgetCatalog
             Kind = WidgetKind.SystemMonitor,
             DisplayName = "システムモニター",
             Description = "CPU・メモリ・ディスク・ネットワークの使用状況。",
-            Glyph = "",
+            Glyph = "",
             Category = "システム",
             SupportedSizes = AllSizes,
             DefaultSettings = new Dictionary<string, string>
@@ -212,6 +234,7 @@ public static class WidgetCatalog
                 [WidgetSettingKeys.GaugeStyle] = "Ring",
                 [WidgetSettingKeys.ShowPercentageText] = "true",
                 [WidgetSettingKeys.DriveLetter] = "C",
+                [WidgetSettingKeys.ColorByLoad] = "true",
             },
         },
         new()
@@ -226,6 +249,77 @@ public static class WidgetCatalog
             {
                 [WidgetSettingKeys.GaugeStyle] = "Ring",
                 [WidgetSettingKeys.ShowPercentageText] = "true",
+            },
+        },
+        new()
+        {
+            Kind = WidgetKind.CpuMonitor,
+            DisplayName = "CPU",
+            Description = "CPU の使用率をコア別・履歴つきで表示します。",
+            Glyph = "",
+            Category = "システム",
+            SupportedSizes = AllSizes,
+            DefaultSettings = new Dictionary<string, string>
+            {
+                [WidgetSettingKeys.CpuDisplayStyle] = "Combined",
+                [WidgetSettingKeys.ShowCoreGrid] = "true",
+                [WidgetSettingKeys.ShowCpuName] = "true",
+                [WidgetSettingKeys.ShowCpuClock] = "true",
+                [WidgetSettingKeys.ShowProcessCount] = "false",
+                [WidgetSettingKeys.ShowPercentageText] = "true",
+                [WidgetSettingKeys.ColorByLoad] = "true",
+            },
+        },
+        new()
+        {
+            Kind = WidgetKind.GpuMonitor,
+            DisplayName = "GPU",
+            Description = "GPU の使用率と VRAM の使用量。",
+            Glyph = "",
+            Category = "システム",
+            SupportedSizes = AllSizes,
+            DefaultSettings = new Dictionary<string, string>
+            {
+                [WidgetSettingKeys.GaugeStyle] = "Ring",
+                [WidgetSettingKeys.ShowVram] = "true",
+                [WidgetSettingKeys.ShowGpuName] = "true",
+                [WidgetSettingKeys.ShowPercentageText] = "true",
+                [WidgetSettingKeys.ColorByLoad] = "true",
+            },
+        },
+        new()
+        {
+            Kind = WidgetKind.NetworkMonitor,
+            DisplayName = "ネットワーク",
+            Description = "通信速度の推移と累計転送量。",
+            Glyph = "",
+            Category = "システム",
+            SupportedSizes = AllSizes,
+            DefaultSettings = new Dictionary<string, string>
+            {
+                [WidgetSettingKeys.NetworkUnit] = "Bits",
+                [WidgetSettingKeys.NetworkScaleMode] = "Auto",
+                [WidgetSettingKeys.NetworkFullScaleMbps] = "100",
+                [WidgetSettingKeys.ShowNetworkTotals] = "true",
+                [WidgetSettingKeys.ShowPercentageText] = "true",
+            },
+        },
+        new()
+        {
+            Kind = WidgetKind.DiskMonitor,
+            DisplayName = "ディスク",
+            Description = "ディスクの空き容量と読み書き速度。",
+            Glyph = "",
+            Category = "システム",
+            SupportedSizes = AllSizes,
+            DefaultSettings = new Dictionary<string, string>
+            {
+                [WidgetSettingKeys.DriveLetter] = "C",
+                [WidgetSettingKeys.GaugeStyle] = "Ring",
+                [WidgetSettingKeys.ShowDiskIo] = "true",
+                [WidgetSettingKeys.ShowAllDrives] = "false",
+                [WidgetSettingKeys.ShowPercentageText] = "true",
+                [WidgetSettingKeys.ColorByLoad] = "true",
             },
         },
         new()

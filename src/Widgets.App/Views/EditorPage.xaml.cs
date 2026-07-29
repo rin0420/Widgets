@@ -769,11 +769,50 @@ public sealed partial class EditorPage : Page
                 ContentPanel.Children.Add(GaugeStyleCombo());
                 ContentPanel.Children.Add(BuildDriveCombo());
                 ContentPanel.Children.Add(SettingToggle("数値を表示", WidgetSettingKeys.ShowPercentageText, true));
+                ContentPanel.Children.Add(SettingToggle("負荷に応じて色を変える", WidgetSettingKeys.ColorByLoad, true));
                 break;
 
             case WidgetKind.Battery:
                 ContentPanel.Children.Add(GaugeStyleCombo());
                 ContentPanel.Children.Add(SettingToggle("数値を表示", WidgetSettingKeys.ShowPercentageText, true));
+                break;
+
+            case WidgetKind.CpuMonitor:
+                ContentPanel.Children.Add(SettingCombo("表示スタイル", WidgetSettingKeys.CpuDisplayStyle,
+                    [("Combined", "使用率＋グラフ"), ("Cores", "コア別"), ("Graph", "履歴グラフ")], "Combined"));
+                ContentPanel.Children.Add(SettingToggle("コア別の負荷を表示", WidgetSettingKeys.ShowCoreGrid, true));
+                ContentPanel.Children.Add(SettingToggle("CPU 名を表示", WidgetSettingKeys.ShowCpuName, true));
+                ContentPanel.Children.Add(SettingToggle("クロックを表示", WidgetSettingKeys.ShowCpuClock, true));
+                ContentPanel.Children.Add(SettingToggle("プロセス数を表示", WidgetSettingKeys.ShowProcessCount, false));
+                ContentPanel.Children.Add(SettingToggle("数値を表示", WidgetSettingKeys.ShowPercentageText, true));
+                ContentPanel.Children.Add(SettingToggle("負荷に応じて色を変える", WidgetSettingKeys.ColorByLoad, true));
+                break;
+
+            case WidgetKind.GpuMonitor:
+                ContentPanel.Children.Add(GaugeStyleCombo());
+                ContentPanel.Children.Add(SettingToggle("VRAM を表示", WidgetSettingKeys.ShowVram, true));
+                ContentPanel.Children.Add(SettingToggle("GPU 名を表示", WidgetSettingKeys.ShowGpuName, true));
+                ContentPanel.Children.Add(SettingToggle("数値を表示", WidgetSettingKeys.ShowPercentageText, true));
+                ContentPanel.Children.Add(SettingToggle("負荷に応じて色を変える", WidgetSettingKeys.ColorByLoad, true));
+                break;
+
+            case WidgetKind.NetworkMonitor:
+                ContentPanel.Children.Add(SettingCombo("単位", WidgetSettingKeys.NetworkUnit,
+                    [("Bits", "ビット毎秒 (Mbps)"), ("Bytes", "バイト毎秒 (MB/s)")], "Bits"));
+                ContentPanel.Children.Add(SettingCombo("縦軸のスケール", WidgetSettingKeys.NetworkScaleMode,
+                    [("Auto", "自動"), ("Fixed", "固定")], "Auto"));
+                ContentPanel.Children.Add(SettingSlider("スケールの上限（Mbps）", WidgetSettingKeys.NetworkFullScaleMbps, 1, 1000, 1, 100));
+                ContentPanel.Children.Add(SettingToggle("累計転送量を表示", WidgetSettingKeys.ShowNetworkTotals, true));
+                ContentPanel.Children.Add(SettingToggle("数値を表示", WidgetSettingKeys.ShowPercentageText, true));
+                break;
+
+            case WidgetKind.DiskMonitor:
+                ContentPanel.Children.Add(SettingToggle("すべてのドライブを表示", WidgetSettingKeys.ShowAllDrives, false));
+                ContentPanel.Children.Add(BuildDriveCombo());
+                ContentPanel.Children.Add(GaugeStyleCombo());
+                ContentPanel.Children.Add(SettingToggle("読み書き速度を表示", WidgetSettingKeys.ShowDiskIo, true));
+                ContentPanel.Children.Add(SettingToggle("数値を表示", WidgetSettingKeys.ShowPercentageText, true));
+                ContentPanel.Children.Add(SettingToggle("負荷に応じて色を変える", WidgetSettingKeys.ColorByLoad, true));
                 break;
 
             case WidgetKind.Photo:
@@ -875,7 +914,8 @@ public sealed partial class EditorPage : Page
     {
         (string Key, string Label)[] metrics =
         [
-            ("cpu", "CPU"), ("ram", "メモリ"), ("disk", "ディスク"), ("net", "ネットワーク"), ("gpu", "GPU"),
+            ("cpu", "CPU"), ("ram", "メモリ"), ("disk", "ディスク"), ("net", "ネットワーク"),
+            ("gpu", "GPU"), ("diskio", "ディスク I/O"), ("proc", "プロセス数"), ("uptime", "稼働時間"),
         ];
 
         var selected = _definition.GetString(WidgetSettingKeys.Metrics, "cpu,ram")

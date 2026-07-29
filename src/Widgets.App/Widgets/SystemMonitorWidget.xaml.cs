@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Widgets.App.Common;
 using Widgets.App.Controls;
@@ -16,15 +17,24 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
 {
     private const int HistoryCapacity = 60;
 
-    /// <summary>Network throughput has no natural ceiling; this is the gauge's full-scale value.</summary>
-    private const double NetworkFullScaleKbps = 10_000;
+    /// <summary>How much of the gap to a lower ceiling to close per sample; growing is instant instead.</summary>
+    private const double ScaleShrinkSmoothing = 0.12;
 
-    private static readonly string[] KnownMetrics = ["cpu", "ram", "disk", "net"];
+    /// <summary>Auto-scale floor for the network tile, in Kbps, so idle traffic doesn't peg the gauge.</summary>
+    private const double NetworkAutoScaleFloorKbps = 1000;
+
+    /// <summary>Auto-scale floor for the disk I/O tile, in bytes/sec.</summary>
+    private const double DiskIoAutoScaleFloorBytesPerSec = 5 * 1024 * 1024;
+
+    private static readonly string[] KnownMetrics = ["cpu", "ram", "disk", "net", "gpu", "diskio", "proc", "uptime"];
 
     private readonly List<Tile> _tiles = [];
     private readonly Dictionary<string, Queue<double>> _history = new();
+    private readonly AdaptiveScale _netScale = new(NetworkAutoScaleFloorKbps);
+    private readonly AdaptiveScale _diskIoScale = new(DiskIoAutoScaleFloorBytesPerSec);
 
     private bool _subscribed;
+    private bool _colorByLoad = true;
 
     public SystemMonitorWidget()
     {
@@ -36,6 +46,7 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
         var theme = context.Theme;
         var style = context.GetString(WidgetSettingKeys.GaugeStyle, "Ring");
         var showText = context.GetBool(WidgetSettingKeys.ShowPercentageText, true);
+        _colorByLoad = context.GetBool(WidgetSettingKeys.ColorByLoad, true);
 
         var drive = context.GetString(WidgetSettingKeys.DriveLetter, "C");
         if (!string.IsNullOrWhiteSpace(drive))
@@ -58,8 +69,10 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
         var columns = context.Size switch
         {
             WidgetSize.Small => Math.Min(metrics.Count, 2),
-            WidgetSize.Tall => 1,
+            WidgetSize.Tall => metrics.Count > 4 ? 2 : 1,
             WidgetSize.Large => Math.Min(metrics.Count, 2),
+            WidgetSize.Medium => Math.Min(metrics.Count, 4),
+            WidgetSize.Wide => Math.Min(metrics.Count, 4),
             _ => metrics.Count,
         };
 
@@ -83,9 +96,13 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
         var tileWidth = Math.Max(24, (context.Width - (columns - 1) * 8) / columns);
         var tileHeight = Math.Max(24, (context.Height - (rows - 1) * 8) / rows);
 
+        // Eight metrics can shrink a tile below what a ring gauge reads well at; fall back to the
+        // more compact bar instead of drawing an illegibly tiny circle.
+        var effectiveStyle = style == "Ring" && (tileHeight < 56 || tileWidth < 56) ? "Bar" : style;
+
         for (var i = 0; i < metrics.Count; i++)
         {
-            var tile = style switch
+            var tile = effectiveStyle switch
             {
                 "Bar" => BuildBar(theme, metrics[i], tileWidth, tileHeight, showText),
                 "Sparkline" => BuildSpark(theme, metrics[i], tileWidth, tileHeight, showText),
@@ -127,6 +144,12 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
 
     private void Update(SystemStats stats)
     {
+        var theme = Context?.Theme;
+        if (theme is null)
+        {
+            return;
+        }
+
         foreach (var tile in _tiles)
         {
             var fraction = Fraction(tile.Id, stats);
@@ -150,6 +173,33 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
             if (tile.Value is not null)
             {
                 tile.Value.Text = ValueText(tile.Id, stats);
+            }
+
+            // Only "higher is worse" metrics get load coloring; net/diskio/proc/uptime would just
+            // mislead if painted the same way.
+            if (UsesLoadColor(tile.Id))
+            {
+                var color = WidgetVisuals.LoadColor(theme, fraction, _colorByLoad);
+
+                if (tile.Ring?.Stroke is SolidColorBrush ringBrush)
+                {
+                    ringBrush.Color = color;
+                }
+
+                if (tile.Bar is not null)
+                {
+                    WidgetVisuals.SetBarColor(tile.Bar, color);
+                }
+
+                if (tile.Spark?.Stroke is SolidColorBrush sparkBrush)
+                {
+                    sparkBrush.Color = color;
+                }
+
+                if (tile.Value?.Foreground is SolidColorBrush valueBrush)
+                {
+                    valueBrush.Color = color;
+                }
             }
         }
     }
@@ -291,17 +341,31 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
         "ram" => "メモリ",
         "disk" => "ディスク",
         "net" => "ネット",
+        "gpu" => "GPU",
+        "diskio" => "ディスクI/O",
+        "proc" => "プロセス",
+        "uptime" => "稼働時間",
         _ => id.ToUpperInvariant(),
     };
 
-    private static double Fraction(string id, SystemStats stats) => id switch
+    private double Fraction(string id, SystemStats stats) => id switch
     {
         "cpu" => stats.CpuPercent / 100.0,
         "ram" => stats.RamPercent / 100.0,
         "disk" => stats.DiskPercent / 100.0,
-        "net" => Math.Min(1.0, (stats.NetDownKbps + stats.NetUpKbps) / NetworkFullScaleKbps),
+        "net" => ScaledFraction(stats.NetDownKbps + stats.NetUpKbps, _netScale),
+        "gpu" => stats.HasGpu ? stats.GpuPercent / 100.0 : 0,
+        "diskio" => ScaledFraction(stats.DiskReadBytesPerSec + stats.DiskWriteBytesPerSec, _diskIoScale),
+        "proc" => Math.Min(1.0, stats.ProcessCount / 500.0),
+        "uptime" => stats.Uptime.TotalHours % 24 / 24.0,
         _ => 0,
     };
+
+    private static double ScaledFraction(double raw, AdaptiveScale scale)
+        => Math.Clamp(raw / scale.Resolve(raw), 0, 1);
+
+    /// <summary>Only "higher is worse" metrics get load coloring.</summary>
+    private static bool UsesLoadColor(string id) => id is "cpu" or "ram" or "disk" or "gpu";
 
     private static string ValueText(string id, SystemStats stats) => id switch
     {
@@ -309,6 +373,10 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
         "ram" => $"{stats.RamPercent:0}%",
         "disk" => $"{stats.DiskPercent:0}%",
         "net" => $"↓{Rate(stats.NetDownKbps)} ↑{Rate(stats.NetUpKbps)}",
+        "gpu" => stats.HasGpu ? $"{stats.GpuPercent:0}%" : "—",
+        "diskio" => WidgetVisuals.FormatByteRate(stats.DiskReadBytesPerSec + stats.DiskWriteBytesPerSec),
+        "proc" => stats.ProcessCount.ToString(CultureInfo.InvariantCulture),
+        "uptime" => WidgetVisuals.FormatUptime(stats.Uptime),
         _ => string.Empty,
     };
 
@@ -318,7 +386,68 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
             : kbps.ToString("0", CultureInfo.InvariantCulture) + "K";
 
     private static SystemStats SampleStats()
-        => new(38, 61, 19.5, 32.0, 47, 220, 476, 1840, 260, 78, false, true, TimeSpan.FromHours(9));
+        => new(38, 61, 19.5, 32.0, 47, 220, 476, 1840, 260, 78, false, true, TimeSpan.FromHours(9))
+        {
+            HasGpu = true,
+            GpuPercent = 22,
+            DiskReadBytesPerSec = 13_000_000,
+            DiskWriteBytesPerSec = 3_200_000,
+            ProcessCount = 312,
+        };
+
+    /// <summary>
+    /// Rolling peak for gauges with no fixed ceiling (network, disk I/O): the scale grows
+    /// instantly so the trace never pins at 100%, but eases down slowly so it doesn't visibly
+    /// jitter once traffic settles, and always rounds up to a "nice" 1/2/5 × 10^n value.
+    /// </summary>
+    private sealed class AdaptiveScale(double floor)
+    {
+        private readonly double _floor = floor;
+        private readonly Queue<double> _samples = new();
+        private double _current = floor;
+
+        public double Resolve(double sample)
+        {
+            _samples.Enqueue(sample);
+            while (_samples.Count > HistoryCapacity)
+            {
+                _samples.Dequeue();
+            }
+
+            var max = 0.0;
+            foreach (var v in _samples)
+            {
+                max = Math.Max(max, v);
+            }
+
+            var target = Math.Max(_floor, NiceCeiling(max, _floor));
+
+            if (target >= _current)
+            {
+                _current = target;
+            }
+            else
+            {
+                var eased = _current + (target - _current) * ScaleShrinkSmoothing;
+                _current = eased - target < Math.Max(1.0, target * 0.01) ? target : eased;
+            }
+
+            return _current;
+        }
+
+        private static double NiceCeiling(double raw, double floor)
+        {
+            if (raw <= 0)
+            {
+                return floor;
+            }
+
+            var magnitude = Math.Pow(10, Math.Floor(Math.Log10(raw)));
+            var normalized = raw / magnitude;
+            var step = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+            return step * magnitude;
+        }
+    }
 
     private sealed class Tile(string id, FrameworkElement root, TextBlock? value)
     {

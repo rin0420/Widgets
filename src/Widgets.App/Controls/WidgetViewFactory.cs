@@ -20,6 +20,10 @@ public static class WidgetViewFactory
         WidgetKind.Note => new NoteWidget(),
         WidgetKind.Astronomy => new AstronomyWidget(),
         WidgetKind.WorldClock => new WorldClockWidget(),
+        WidgetKind.CpuMonitor => new CpuMonitorWidget(),
+        WidgetKind.GpuMonitor => new GpuMonitorWidget(),
+        WidgetKind.NetworkMonitor => new NetworkMonitorWidget(),
+        WidgetKind.DiskMonitor => new DiskMonitorWidget(),
         _ => new DigitalClockWidget(),
     };
 }
