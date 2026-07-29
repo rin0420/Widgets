@@ -34,6 +34,8 @@ public partial class App : Application
 
         await AppServices.Store.LoadAsync();
 
+        AppServices.Wallpaper.CaptureAnimated = AppServices.Store.Document.Settings.FollowAnimatedWallpaper;
+
         Hosts.Start();
 
         _mainWindow = new MainWindow();

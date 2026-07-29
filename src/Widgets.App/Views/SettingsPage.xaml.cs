@@ -53,6 +53,7 @@ public sealed partial class SettingsPage : Page
 
         LockAllToggle.IsOn = Settings.LockAllWidgets;
         HideOnFullscreenToggle.IsOn = Settings.HideOnFullscreen;
+        FollowAnimatedWallpaperToggle.IsOn = Settings.FollowAnimatedWallpaper;
         MetricToggle.IsOn = Settings.UseMetric;
 
         UpdateLocationText();
@@ -189,6 +190,35 @@ public sealed partial class SettingsPage : Page
         }
 
         ShowInfo("すべてのウィジェットを再読み込みしました。", InfoBarSeverity.Success);
+    }
+
+    // ---- デスクトップの背景 -----------------------------------------------------------
+
+    private async void OnRefreshWallpaperClick(object sender, RoutedEventArgs e)
+    {
+        WallpaperRefreshButton.IsEnabled = false;
+
+        try
+        {
+            await AppServices.Wallpaper.RefreshAsync();
+            ShowInfo("デスクトップの背景を再取得しました。", InfoBarSeverity.Success);
+        }
+        finally
+        {
+            WallpaperRefreshButton.IsEnabled = true;
+        }
+    }
+
+    private void OnFollowAnimatedWallpaperToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        Settings.FollowAnimatedWallpaper = FollowAnimatedWallpaperToggle.IsOn;
+        AppServices.Wallpaper.CaptureAnimated = FollowAnimatedWallpaperToggle.IsOn;
+        Commit();
     }
 
     // ---- 天気と場所 ----------------------------------------------------------------

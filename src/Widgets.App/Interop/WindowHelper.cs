@@ -27,6 +27,17 @@ internal static class WindowHelper
             ex &= ~Win32.WS_EX_APPWINDOW;
             Win32.SetWindowLongPtr(hwnd, Win32.GWL_EXSTYLE, new IntPtr(ex));
 
+            // OverlappedPresenter keeps a resize frame even with SetBorderAndTitleBar(false, false),
+            // which leaves a ~3px invisible border on each edge: the client area ends up smaller than
+            // the window, so content gets clipped and anything positioned from the window origin
+            // (the wallpaper layer, the rounded region) is offset. A plain popup has no frame, so
+            // client and window rects coincide.
+            var style = Win32.GetWindowLongPtr(hwnd, Win32.GWL_STYLE).ToInt64();
+            style &= ~(Win32.WS_CAPTION | Win32.WS_THICKFRAME | Win32.WS_SYSMENU
+                       | Win32.WS_MINIMIZEBOX | Win32.WS_MAXIMIZEBOX | Win32.WS_BORDER | Win32.WS_DLGFRAME);
+            style |= Win32.WS_POPUP;
+            Win32.SetWindowLongPtr(hwnd, Win32.GWL_STYLE, new IntPtr(style));
+
             // The widget draws its own corner radius; the shell's rounding would clip it.
             var corner = Win32.DWMWCP_DONOTROUND;
             Win32.DwmSetWindowAttribute(hwnd, Win32.DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, sizeof(int));

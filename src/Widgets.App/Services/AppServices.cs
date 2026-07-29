@@ -10,6 +10,7 @@ public static class AppServices
     private static SystemStatsService? _systemStats;
     private static WeatherService? _weather;
     private static StartupService? _startup;
+    private static WallpaperService? _wallpaper;
 
     public static WidgetStore Store => _store ??= new WidgetStore();
 
@@ -18,6 +19,8 @@ public static class AppServices
     public static WeatherService Weather => _weather ??= new WeatherService();
 
     public static StartupService Startup => _startup ??= new StartupService();
+
+    public static WallpaperService Wallpaper => _wallpaper ??= new WallpaperService();
 
     /// <summary>Set once during startup so background services can marshal to the UI thread.</summary>
     public static Microsoft.UI.Dispatching.DispatcherQueue? UiDispatcher { get; set; }
@@ -40,6 +43,7 @@ public static class AppServices
     {
         _systemStats?.Dispose();
         _weather?.Dispose();
+        _wallpaper?.Dispose();
         _store?.Flush();
     }
 }

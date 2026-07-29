@@ -14,6 +14,13 @@ internal static class Win32
     internal const int GWL_EXSTYLE = -20;
 
     internal const long WS_POPUP = 0x80000000L;
+    internal const long WS_CAPTION = 0x00C00000L;
+    internal const long WS_THICKFRAME = 0x00040000L;
+    internal const long WS_SYSMENU = 0x00080000L;
+    internal const long WS_MINIMIZEBOX = 0x00020000L;
+    internal const long WS_MAXIMIZEBOX = 0x00010000L;
+    internal const long WS_BORDER = 0x00800000L;
+    internal const long WS_DLGFRAME = 0x00400000L;
 
     internal const long WS_EX_TOOLWINDOW = 0x00000080L;
     internal const long WS_EX_TRANSPARENT = 0x00000020L;

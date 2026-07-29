@@ -68,7 +68,9 @@ public static class ThemePresetCatalog
                 FontWeight = 500,
                 TintColor = "#FF202020",
                 AccentColor = "#FF005FB8",
-                SecondaryColor = "#FF616161",
+                // Darker than the other light presets: with a transparent backdrop this text sits on
+                // the wallpaper, where mid-grey drops under a 3:1 contrast ratio.
+                SecondaryColor = "#FF444444",
                 BackgroundColor = "#00F5F5F5",
                 BorderColor = "#00000000",
                 BorderThickness = 0.0,

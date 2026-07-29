@@ -35,6 +35,9 @@ public sealed class AppSettings
     /// <summary>True for °C, false for °F.</summary>
     public bool UseMetric { get; set; } = true;
 
+    /// <summary>Re-capture the desktop periodically so animated wallpapers show through widgets.</summary>
+    public bool FollowAnimatedWallpaper { get; set; }
+
     public const int MaxSavedColors = 6;
 }
 

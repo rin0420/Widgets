@@ -60,8 +60,7 @@
                             <TextBox x:Name="NameBox" Header="名前" TextChanged="OnNameChanged" />
                             <ComboBox x:Name="SizeCombo" Header="サイズ" HorizontalAlignment="Stretch"
                                       SelectionChanged="OnSizeComboChanged" />
-                            <Slider x:Name="ScaleSlider" Header="拡大率" Minimum="0.5" Maximum="3.0"
-                                    StepFrequency="0.05" ValueChanged="OnScaleChanged" />
+                            <Slider x:Name="ScaleSlider" Header="拡大率" ValueChanged="OnScaleChanged" />
                             <ComboBox x:Name="ZOrderCombo" Header="重なり順" HorizontalAlignment="Stretch"
                                       SelectionChanged="OnZOrderChanged" />
                             <ToggleSwitch x:Name="ClickThroughToggle" Header="クリックをすり抜ける"
@@ -81,8 +80,7 @@
                         <StackPanel Spacing="14" Padding="0,4,0,4">
                             <ComboBox x:Name="FontCombo" Header="フォント" HorizontalAlignment="Stretch"
                                       SelectionChanged="OnFontChanged" />
-                            <Slider x:Name="FontScaleSlider" Header="文字の大きさ" Minimum="0.5" Maximum="2.0"
-                                    StepFrequency="0.05" ValueChanged="OnFontScaleChanged" />
+                            <Slider x:Name="FontScaleSlider" Header="文字の大きさ" ValueChanged="OnFontScaleChanged" />
                             <ComboBox x:Name="FontWeightCombo" Header="文字の太さ" HorizontalAlignment="Stretch"
                                       SelectionChanged="OnFontWeightChanged" />
 
@@ -95,8 +93,7 @@
                                     StepFrequency="1" ValueChanged="OnCornerRadiusChanged" />
                             <Slider x:Name="PaddingSlider" Header="内側の余白" Minimum="0" Maximum="48"
                                     StepFrequency="1" ValueChanged="OnPaddingChanged" />
-                            <Slider x:Name="OpacitySlider" Header="不透明度" Minimum="0.1" Maximum="1.0"
-                                    StepFrequency="0.05" ValueChanged="OnOpacityChanged" />
+                            <Slider x:Name="OpacitySlider" Header="不透明度" ValueChanged="OnOpacityChanged" />
 
                             <ComboBox x:Name="BackdropCombo" Header="背景" HorizontalAlignment="Stretch"
                                       SelectionChanged="OnBackdropChanged" />
@@ -110,7 +107,6 @@
                                 <TextBlock x:Name="BackgroundImageText" TextTrimming="CharacterEllipsis"
                                            Style="{StaticResource CaptionTextStyle}" />
                                 <Slider x:Name="BackgroundImageOpacitySlider" Header="背景画像の不透明度"
-                                        Minimum="0.1" Maximum="1.0" StepFrequency="0.05"
                                         ValueChanged="OnBackgroundImageOpacityChanged" />
                             </StackPanel>
 

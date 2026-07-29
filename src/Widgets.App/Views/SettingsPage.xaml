@@ -46,6 +46,19 @@
                     </StackPanel>
                 </Expander>
 
+                <Expander Header="デスクトップの背景" Style="{StaticResource SectionExpanderStyle}">
+                    <StackPanel Spacing="14" Padding="0,4,0,4">
+                        <TextBlock Text="透過するウィジェットの背景に使う、現在のデスクトップ画像を取り込み直します。"
+                                   Style="{StaticResource CaptionTextStyle}" />
+                        <Button x:Name="WallpaperRefreshButton" Content="デスクトップの背景を再取得"
+                                Click="OnRefreshWallpaperClick" />
+                        <ToggleSwitch x:Name="FollowAnimatedWallpaperToggle" Header="アニメーション壁紙に追従する"
+                                      OnContent="オン" OffContent="オフ" Toggled="OnFollowAnimatedWallpaperToggled" />
+                        <TextBlock Text="5 秒ごとにデスクトップを取り込み直します。CPU の使用率が上がります。"
+                                   Style="{StaticResource CaptionTextStyle}" />
+                    </StackPanel>
+                </Expander>
+
                 <Expander Header="天気と場所" Style="{StaticResource SectionExpanderStyle}">
                     <StackPanel Spacing="14" Padding="0,4,0,4">
                         <ToggleSwitch x:Name="MetricToggle" Header="温度の単位"

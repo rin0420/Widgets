@@ -16,6 +16,9 @@ public sealed class WidgetStore
     {
         WriteIndented = true,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        // "No location set" is stored as NaN, which plain JSON cannot represent. Without this every
+        // save threw before writing anything, so nothing persisted until a location was configured.
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
         Converters = { new JsonStringEnumConverter() },
     };
 
@@ -54,6 +57,11 @@ public sealed class WidgetStore
         }
 
         Document = SeedDefaults();
+
+        // Write the starter set out immediately. Without this nothing exists on disk until the user
+        // happens to move a widget, so a first run that is only looked at leaves no state behind and
+        // the "defaults" would silently regenerate (and re-place themselves) on every launch.
+        Flush();
     }
 
     /// <summary>Synchronous, atomic save — used on shutdown where there is no time for a debounce.</summary>

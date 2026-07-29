@@ -41,11 +41,38 @@ public sealed partial class EditorPage : Page
     private WidgetSurface? _surface;
     private Grid? _previewOuter;
     private Grid? _previewInner;
-    private bool _loading;
+    /// <summary>
+    /// Starts true so the control event handlers stay inert until <see cref="OnNavigatedTo"/> has
+    /// supplied a definition — configuring the slider ranges in the constructor raises ValueChanged
+    /// before there is anything to write to.
+    /// </summary>
+    private bool _loading = true;
 
     public EditorPage()
     {
         InitializeComponent();
+        ConfigureSliderRanges();
+    }
+
+    /// <summary>
+    /// Slider ranges are set here rather than in XAML: assigning a fractional Minimum from compiled
+    /// XAML throws a XamlParseException on RangeBase.Minimum, which took the whole editor page down.
+    /// Order matters — widen Maximum before narrowing Minimum so the range is never inverted.
+    /// </summary>
+    private void ConfigureSliderRanges()
+    {
+        static void Configure(Slider slider, double min, double max, double step)
+        {
+            slider.Maximum = Math.Max(max, slider.Minimum);
+            slider.Minimum = min;
+            slider.Maximum = max;
+            slider.StepFrequency = step;
+        }
+
+        Configure(ScaleSlider, 0.5, 3.0, 0.05);
+        Configure(FontScaleSlider, 0.5, 2.0, 0.05);
+        Configure(OpacitySlider, 0.1, 1.0, 0.05);
+        Configure(BackgroundImageOpacitySlider, 0.1, 1.0, 0.05);
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
