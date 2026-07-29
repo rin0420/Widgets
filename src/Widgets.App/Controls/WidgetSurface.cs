@@ -162,10 +162,18 @@ public sealed class WidgetSurface : ContentControl
             // vector gauges crisp instead of resampling a bitmap. The editor preview stays at 1x —
             // it fits the design into its own box and would overflow if scaled twice.
             var contentScale = Math.Clamp(definition.Scale, 0.5, 3.0);
+            var scaling = !_isPreview && Math.Abs(contentScale - 1.0) >= 0.001;
+
+            // A render transform does not affect layout, so the fixed-size root would still be
+            // centred in the larger window and then scale away from that centre, landing offset and
+            // clipped. Pinning it to the top-left makes the scaled box fill the window exactly.
+            _root.HorizontalAlignment = scaling ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
+            _root.VerticalAlignment = scaling ? VerticalAlignment.Top : VerticalAlignment.Stretch;
+
             _root.RenderTransformOrigin = new Windows.Foundation.Point(0, 0);
-            _root.RenderTransform = _isPreview || Math.Abs(contentScale - 1.0) < 0.001
-                ? null
-                : new ScaleTransform { ScaleX = contentScale, ScaleY = contentScale };
+            _root.RenderTransform = scaling
+                ? new ScaleTransform { ScaleX = contentScale, ScaleY = contentScale }
+                : null;
 
             ApplyChrome(theme);
 
