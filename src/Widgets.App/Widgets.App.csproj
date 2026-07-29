@@ -18,6 +18,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Widgets</AssemblyName>
+    <Version>0.1.0</Version>
+    <InformationalVersion>0.1.0-beta</InformationalVersion>
+    <Product>Widgets</Product>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <SelfContained>true</SelfContained>
     <WindowsSdkPackageVersion>10.0.19041.57</WindowsSdkPackageVersion>
