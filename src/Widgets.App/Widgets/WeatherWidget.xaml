@@ -1,0 +1,19 @@
+<controls:WidgetViewBase
+    x:Class="Widgets.App.Widgets.WeatherWidget"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Widgets.App.Controls">
+
+    <Grid>
+        <Grid x:Name="Body" />
+
+        <TextBlock
+            x:Name="StatusText"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            TextAlignment="Center"
+            TextWrapping="Wrap"
+            Visibility="Collapsed" />
+    </Grid>
+
+</controls:WidgetViewBase>

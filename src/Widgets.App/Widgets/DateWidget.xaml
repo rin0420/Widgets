@@ -1,0 +1,23 @@
+<controls:WidgetViewBase
+    x:Class="Widgets.App.Widgets.DateWidget"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Widgets.App.Controls">
+
+    <StackPanel
+        x:Name="Root"
+        HorizontalAlignment="Center"
+        VerticalAlignment="Center">
+
+        <Viewbox x:Name="DayBox" Stretch="Uniform" StretchDirection="DownOnly">
+            <TextBlock x:Name="DayText" />
+        </Viewbox>
+
+        <StackPanel x:Name="Labels" VerticalAlignment="Center">
+            <TextBlock x:Name="WeekdayText" TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="MonthText" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+    </StackPanel>
+
+</controls:WidgetViewBase>

@@ -1,0 +1,16 @@
+<controls:WidgetViewBase
+    x:Class="Widgets.App.Widgets.NoteWidget"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Widgets.App.Controls">
+
+    <Viewbox
+        x:Name="Box"
+        Stretch="Uniform"
+        StretchDirection="DownOnly"
+        HorizontalAlignment="Center"
+        VerticalAlignment="Center">
+        <TextBlock x:Name="NoteText" TextWrapping="Wrap" />
+    </Viewbox>
+
+</controls:WidgetViewBase>

@@ -1,0 +1,28 @@
+<controls:WidgetViewBase
+    x:Class="Widgets.App.Widgets.WorldClockWidget"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Widgets.App.Controls">
+
+    <StackPanel VerticalAlignment="Center" Spacing="2">
+        <StackPanel
+            x:Name="CityRow"
+            Orientation="Horizontal"
+            HorizontalAlignment="Center"
+            Spacing="5">
+            <TextBlock x:Name="PhaseGlyph" VerticalAlignment="Center" />
+            <TextBlock x:Name="CityText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <Viewbox x:Name="TimeBox" Stretch="Uniform" StretchDirection="DownOnly">
+            <TextBlock x:Name="TimeText" />
+        </Viewbox>
+
+        <TextBlock
+            x:Name="OffsetText"
+            HorizontalAlignment="Center"
+            TextAlignment="Center"
+            TextTrimming="CharacterEllipsis" />
+    </StackPanel>
+
+</controls:WidgetViewBase>
