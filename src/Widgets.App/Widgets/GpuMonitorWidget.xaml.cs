@@ -274,22 +274,38 @@ public sealed partial class GpuMonitorWidget : WidgetViewBase
     {
         var stack = new StackPanel { Spacing = 3 * scale, Width = width, HorizontalAlignment = HorizontalAlignment.Center };
 
-        var header = new Grid();
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var labelSize = 11 * scale;
 
-        var label = WidgetVisuals.Text(theme, 11 * scale, WidgetVisuals.Secondary(theme));
+        // "3.2 GB / 8.0 GB" beside the caption needs roughly 11em. Any narrower and the auto-sized
+        // value takes the whole row, squeezing the caption down to "V." — so give each its own line.
+        var stacked = width < WidgetVisuals.Size(theme, labelSize) * 11;
+
+        var label = WidgetVisuals.Text(theme, labelSize, WidgetVisuals.Secondary(theme));
         label.Text = "VRAM";
-        header.Children.Add(label);
 
-        _vramText = WidgetVisuals.Text(theme, 11 * scale, WidgetVisuals.Tint(theme));
-        _vramText.HorizontalAlignment = HorizontalAlignment.Right;
-        Grid.SetColumn(_vramText, 1);
-        header.Children.Add(_vramText);
+        _vramText = WidgetVisuals.Text(theme, labelSize, WidgetVisuals.Tint(theme));
+
+        if (stacked)
+        {
+            stack.Children.Add(label);
+            stack.Children.Add(_vramText);
+        }
+        else
+        {
+            var header = new Grid();
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            header.Children.Add(label);
+
+            _vramText.HorizontalAlignment = HorizontalAlignment.Right;
+            Grid.SetColumn(_vramText, 1);
+            header.Children.Add(_vramText);
+
+            stack.Children.Add(header);
+        }
 
         _vramBar = WidgetVisuals.Bar(width, Math.Max(5, 7 * scale), WidgetVisuals.Track(theme), WidgetVisuals.Accent(theme));
-
-        stack.Children.Add(header);
         stack.Children.Add(_vramBar);
 
         _vramRow = stack;
