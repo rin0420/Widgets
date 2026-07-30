@@ -62,6 +62,18 @@ public sealed record SystemStats(
 
     /// <summary>Estimated minutes left on battery, or -1 when Windows cannot tell.</summary>
     public int BatteryMinutesRemaining { get; init; } = -1;
+
+    /// <summary>
+    /// Frames the desktop compositor actually put on screen, per second. This is the display-side
+    /// frame rate — it tracks the refresh rate while the machine keeps up and falls when the GPU
+    /// cannot. It is not any single application's internal frame rate.
+    /// </summary>
+    public double Fps { get; init; }
+
+    /// <summary>The display's nominal refresh rate in Hz, which is the ceiling for <see cref="Fps"/>.</summary>
+    public double RefreshHz { get; init; }
+
+    public bool HasFrameRate { get; init; }
 }
 
 /// <summary>
@@ -108,6 +120,24 @@ public sealed class SystemStatsService : IDisposable
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS lpSystemPowerStatus);
+
+    /// <summary>Blocks until the compositor has finished the next frame.</summary>
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmIsCompositionEnabled([MarshalAs(UnmanagedType.Bool)] out bool enabled);
+
+    private const int VREFRESH = 116;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDC(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+    [DllImport("gdi32.dll")]
+    private static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
 
     private const int SystemProcessorPerformanceInformation = 8;
 
@@ -180,6 +210,8 @@ public sealed class SystemStatsService : IDisposable
     private double _netUpPeakKbps;
     private long _netTotalDownBytes;
     private long _netTotalUpBytes;
+
+    private double _fps;
 
     public string DriveLetter { get; set; } = "C";
 
@@ -278,6 +310,7 @@ public sealed class SystemStatsService : IDisposable
         _hasPrevCpu = false;
         _hasPrevCoreTimes = false;
         _hasPrevNet = false;
+        _fps = 0;
     }
 
     private void EnsurePdh()
@@ -308,6 +341,7 @@ public sealed class SystemStatsService : IDisposable
         var net = SampleNetwork();
         var battery = SampleBattery();
         var pdh = SamplePdh();
+        var frames = SampleFrameRate();
         var uptime = TimeSpan.FromMilliseconds(Environment.TickCount64);
 
         return new SystemStats(
@@ -337,7 +371,88 @@ public sealed class SystemStatsService : IDisposable
             NetTotalUpGb = _netTotalUpBytes / BytesPerGb,
             NetAdapterName = net.AdapterName,
             BatteryMinutesRemaining = battery.MinutesRemaining,
+            Fps = frames.Fps,
+            RefreshHz = frames.RefreshHz,
+            HasFrameRate = frames.Available,
         };
+    }
+
+    /// <summary>Frames timed per sample. Four intervals is ~20 ms at 200 Hz and ~67 ms at 60 Hz.</summary>
+    private const int FrameSamples = 4;
+
+    /// <summary>
+    /// Rate at which the desktop compositor is actually putting frames on screen.
+    ///
+    /// DwmGetCompositionTimingInfo would report this directly but fails on current Windows 11
+    /// builds (0x88980090) for every hwnd including NULL, so the rate is timed instead: DwmFlush
+    /// blocks until DWM finishes the next frame, which makes a short burst of them a stopwatch on
+    /// the real present rate. It sits at the refresh rate while the machine keeps up and falls when
+    /// the GPU cannot. This is the display-side rate, not any one application's internal frame rate.
+    /// </summary>
+    private (double Fps, double RefreshHz, bool Available) SampleFrameRate()
+    {
+        if (DwmIsCompositionEnabled(out var enabled) != 0 || !enabled)
+        {
+            return (0, 0, false);
+        }
+
+        var refreshHz = ReadRefreshHz();
+
+        // The first flush only aligns to a frame boundary; timing starts after it so a partial
+        // interval does not skew the very short sample window.
+        if (DwmFlush() != 0)
+        {
+            return (0, refreshHz, false);
+        }
+
+        var start = Stopwatch.GetTimestamp();
+
+        for (var i = 0; i < FrameSamples; i++)
+        {
+            if (DwmFlush() != 0)
+            {
+                return (0, refreshHz, false);
+            }
+        }
+
+        var seconds = (Stopwatch.GetTimestamp() - start) / (double)Stopwatch.Frequency;
+        if (seconds <= 0)
+        {
+            return (_fps, refreshHz, true);
+        }
+
+        var measured = FrameSamples / seconds;
+        if (refreshHz > 0)
+        {
+            // The panel cannot show more frames than it refreshes.
+            measured = Math.Min(measured, refreshHz);
+        }
+
+        // Four intervals is a noisy window on its own, so the reading is eased toward the new value.
+        _fps = _fps > 0 ? (_fps * 0.6) + (measured * 0.4) : measured;
+        return (_fps, refreshHz, true);
+    }
+
+    /// <summary>Nominal refresh rate of the primary display, which is the ceiling for the measured rate.</summary>
+    private static double ReadRefreshHz()
+    {
+        var hdc = GetDC(IntPtr.Zero);
+        if (hdc == IntPtr.Zero)
+        {
+            return 0;
+        }
+
+        try
+        {
+            var hz = GetDeviceCaps(hdc, VREFRESH);
+
+            // 0 and 1 both mean "hardware default" rather than a real rate.
+            return hz > 1 ? hz : 0;
+        }
+        finally
+        {
+            ReleaseDC(IntPtr.Zero, hdc);
+        }
     }
 
     private double SampleCpu()

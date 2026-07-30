@@ -193,7 +193,7 @@ internal static class PreviewBuilder
 {
     public static UIElement Create(WidgetDefinition definition, double boxWidth, double boxHeight, out WidgetSurface surface)
     {
-        var (width, height) = WidgetMetrics.GetSize(definition.Size);
+        var (width, height) = WidgetMetrics.GetSize(definition);
         var scale = Math.Min(Math.Min(boxWidth / width, boxHeight / height), 1.0);
 
         surface = new WidgetSurface { Width = width, Height = height };

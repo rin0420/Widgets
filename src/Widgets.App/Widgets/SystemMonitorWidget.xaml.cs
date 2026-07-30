@@ -26,7 +26,7 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
     /// <summary>Auto-scale floor for the disk I/O tile, in bytes/sec.</summary>
     private const double DiskIoAutoScaleFloorBytesPerSec = 5 * 1024 * 1024;
 
-    private static readonly string[] KnownMetrics = ["cpu", "ram", "disk", "net", "gpu", "diskio", "proc", "uptime"];
+    private static readonly string[] KnownMetrics = ["cpu", "ram", "disk", "net", "gpu", "diskio", "proc", "uptime", "fps"];
 
     private readonly List<Tile> _tiles = [];
     private readonly Dictionary<string, Queue<double>> _history = new();
@@ -346,6 +346,7 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
         "diskio" => "ディスクI/O",
         "proc" => "プロセス",
         "uptime" => "稼働時間",
+        "fps" => "FPS",
         _ => id.ToUpperInvariant(),
     };
 
@@ -359,6 +360,10 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
         "diskio" => ScaledFraction(stats.DiskReadBytesPerSec + stats.DiskWriteBytesPerSec, _diskIoScale),
         "proc" => Math.Min(1.0, stats.ProcessCount / 500.0),
         "uptime" => stats.Uptime.TotalHours % 24 / 24.0,
+        // Full gauge means "keeping up with the panel", so the refresh rate is the denominator.
+        "fps" => stats.HasFrameRate
+            ? Math.Clamp(stats.Fps / (stats.RefreshHz > 0 ? stats.RefreshHz : 60.0), 0, 1)
+            : 0,
         _ => 0,
     };
 
@@ -378,6 +383,7 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
         "diskio" => WidgetVisuals.FormatByteRate(stats.DiskReadBytesPerSec + stats.DiskWriteBytesPerSec),
         "proc" => stats.ProcessCount.ToString(CultureInfo.InvariantCulture),
         "uptime" => WidgetVisuals.FormatUptime(stats.Uptime),
+        "fps" => stats.HasFrameRate ? $"{stats.Fps:0}" : "—",
         _ => string.Empty,
     };
 
@@ -394,6 +400,9 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
             DiskReadBytesPerSec = 13_000_000,
             DiskWriteBytesPerSec = 3_200_000,
             ProcessCount = 312,
+            HasFrameRate = true,
+            Fps = 60,
+            RefreshHz = 60,
         };
 
     /// <summary>

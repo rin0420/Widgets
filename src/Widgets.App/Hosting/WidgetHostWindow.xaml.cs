@@ -33,9 +33,6 @@ public sealed partial class WidgetHostWindow : Window
     private readonly IntPtr _hwnd;
     private readonly DispatcherTimer _zOrderTimer;
 
-    /// <summary>Reused so a resize gesture allocates nothing per pointer sample.</summary>
-    private readonly ScaleTransform _resizePreview = new();
-
     private bool _dragging;
     private int _dragOffsetX;
     private int _dragOffsetY;
@@ -44,17 +41,17 @@ public sealed partial class WidgetHostWindow : Window
 
     private bool _resizing;
     private ResizeEdge _cursorEdge;
-    private double _resizeStartScale;
+    private ResizeEdge _resizeEdge;
     private double _resizeDpi;
-    private double _resizeBaseWidth;
-    private double _resizeBaseHeight;
+    private double _resizeScale;
+    private double _resizeStartWidth;
+    private double _resizeStartHeight;
     private double _resizeAnchorX;
     private double _resizeAnchorY;
     private double _resizeOriginFx;
     private double _resizeOriginFy;
-    private double _resizeDirX;
-    private double _resizeDirY;
-    private double _resizeBias;
+    private double _resizeBiasX;
+    private double _resizeBiasY;
 
     public WidgetHostWindow(WidgetDefinition definition)
     {
@@ -211,7 +208,7 @@ public sealed partial class WidgetHostWindow : Window
     /// <summary>Window size in physical pixels for the current footprint and scale.</summary>
     private (int Width, int Height) MeasurePhysicalSize(double dpiScale)
     {
-        var (logicalWidth, logicalHeight) = WidgetMetrics.GetSize(Definition.Size);
+        var (logicalWidth, logicalHeight) = WidgetMetrics.GetSize(Definition);
 
         // Clamped exactly like WidgetSurface clamps the content transform, or a hand-edited scale
         // would size the window and its contents differently.
@@ -438,6 +435,14 @@ public sealed partial class WidgetHostWindow : Window
     /// </summary>
     private ResizeEdge HitTestEdge(Windows.Foundation.Point point)
     {
+        // Presets are fixed footprints by definition — only a custom-sized widget can be dragged.
+        // Returning None here also stops the resize cursors from advertising a gesture that would
+        // do nothing.
+        if (Definition.Size != WidgetSize.Custom)
+        {
+            return ResizeEdge.None;
+        }
+
         var width = Root.ActualWidth;
         var height = Root.ActualHeight;
         if (width <= 0 || height <= 0)
@@ -477,16 +482,17 @@ public sealed partial class WidgetHostWindow : Window
     {
         var position = AppWindow.Position;
         var size = AppWindow.Size;
-        var (logicalWidth, logicalHeight) = WidgetMetrics.GetSize(Definition.Size);
+        var (logicalWidth, logicalHeight) = WidgetMetrics.GetSize(Definition);
 
-        _resizeStartScale = Math.Clamp(Definition.Scale, MinScale, MaxScale);
+        _resizeEdge = edge;
+        _resizeScale = Math.Clamp(Definition.Scale, MinScale, MaxScale);
 
         // The DPI is frozen for the whole gesture: growing a widget can move its centre onto a
         // neighbouring display, and re-reading the DPI mid-drag would resize the window under the
         // cursor. ApplyDefinition picks up the real DPI again when the gesture ends.
         _resizeDpi = WindowHelper.GetScale(_hwnd);
-        _resizeBaseWidth = logicalWidth * _resizeDpi;
-        _resizeBaseHeight = logicalHeight * _resizeDpi;
+        _resizeStartWidth = logicalWidth;
+        _resizeStartHeight = logicalHeight;
 
         // The opposite edge is what must not move, so the origin is expressed as a fixed anchor
         // point minus a fraction of the (changing) window size. Grabbing a plain edge leaves the
@@ -496,29 +502,12 @@ public sealed partial class WidgetHostWindow : Window
         _resizeAnchorX = position.X + (_resizeOriginFx * size.Width);
         _resizeAnchorY = position.Y + (_resizeOriginFy * size.Height);
 
-        // Growth direction in physical pixels per 1.0 of Scale. Zeroing the axis that was not
-        // grabbed makes the projection below collapse to a plain one-dimensional ratio.
-        _resizeDirX = (edge & ResizeEdge.Right) != 0 ? _resizeBaseWidth
-            : (edge & ResizeEdge.Left) != 0 ? -_resizeBaseWidth : 0;
-        _resizeDirY = (edge & ResizeEdge.Bottom) != 0 ? _resizeBaseHeight
-            : (edge & ResizeEdge.Top) != 0 ? -_resizeBaseHeight : 0;
-
         // The grab lands a few pixels inside the edge; biasing by that makes the widget start from
-        // its current scale instead of jumping on the first move.
-        _resizeBias = _resizeStartScale - ProjectScale(cursorX, cursorY);
-
-        // The content follows with a render transform rather than a rebuild per pointer sample.
-        // The surface has to be pinned to the window origin at its current size first: it is
-        // normally stretched, and the widget's fixed-size root would drift to the centre of the
-        // growing window and then scale away from there.
-        Surface.HorizontalAlignment = HorizontalAlignment.Left;
-        Surface.VerticalAlignment = VerticalAlignment.Top;
-        Surface.Width = logicalWidth * _resizeStartScale;
-        Surface.Height = logicalHeight * _resizeStartScale;
-        _resizePreview.ScaleX = 1;
-        _resizePreview.ScaleY = 1;
-        Surface.RenderTransformOrigin = new Windows.Foundation.Point(0, 0);
-        Surface.RenderTransform = _resizePreview;
+        // its current size instead of snapping the edge onto the cursor.
+        var rawWidth = PointerWidth(cursorX);
+        var rawHeight = PointerHeight(cursorY);
+        _resizeBiasX = double.IsNaN(rawWidth) ? 0 : size.Width - rawWidth;
+        _resizeBiasY = double.IsNaN(rawHeight) ? 0 : size.Height - rawHeight;
 
         // Dropped for the duration of the gesture so the window is neither clipped to the shape it
         // started at nor re-regioned on every pointer sample. EndResize puts it back.
@@ -526,32 +515,63 @@ public sealed partial class WidgetHostWindow : Window
     }
 
     /// <summary>
-    /// Least-squares projection of the cursor onto the growth direction: the scale closest to the
-    /// pointer that still keeps the footprint's aspect ratio. Everything here is physical pixels.
+    /// Window width in physical pixels implied by the cursor, or NaN when this gesture does not
+    /// move the horizontal edges. Each axis is independent, so a corner drag reshapes freely.
     /// </summary>
-    private double ProjectScale(int cursorX, int cursorY)
+    private double PointerWidth(int cursorX)
     {
-        var dx = cursorX - _resizeAnchorX;
-        var dy = cursorY - _resizeAnchorY;
-        return ((dx * _resizeDirX) + (dy * _resizeDirY))
-            / ((_resizeDirX * _resizeDirX) + (_resizeDirY * _resizeDirY));
+        if ((_resizeEdge & ResizeEdge.Right) != 0)
+        {
+            return cursorX - _resizeAnchorX;
+        }
+
+        return (_resizeEdge & ResizeEdge.Left) != 0 ? _resizeAnchorX - cursorX : double.NaN;
+    }
+
+    private double PointerHeight(int cursorY)
+    {
+        if ((_resizeEdge & ResizeEdge.Bottom) != 0)
+        {
+            return cursorY - _resizeAnchorY;
+        }
+
+        return (_resizeEdge & ResizeEdge.Top) != 0 ? _resizeAnchorY - cursorY : double.NaN;
     }
 
     private void UpdateResize(int cursorX, int cursorY)
     {
-        // Scale is derived from the absolute cursor position every time, never accumulated, so
-        // sitting on a clamp end and dragging further leaves the geometry exactly where it was.
-        // Quantising keeps a fast drag from rebuilding the window region on every pointer sample.
-        var scale = Math.Clamp(Math.Round(ProjectScale(cursorX, cursorY) + _resizeBias, 2), MinScale, MaxScale);
-        if (Math.Abs(scale - Definition.Scale) < 0.001)
+        // Physical pixels per logical widget pixel. Scale stays fixed for the gesture — the drag
+        // changes the footprint itself, not the zoom.
+        var density = _resizeDpi * _resizeScale;
+        if (density <= 0)
         {
             return;
         }
 
-        Definition.Scale = scale;
+        // Derived from the absolute cursor position every time, never accumulated, so sitting on a
+        // clamp end and dragging further leaves the geometry exactly where it was.
+        var rawWidth = PointerWidth(cursorX);
+        var rawHeight = PointerHeight(cursorY);
 
-        var width = (int)Math.Round(_resizeBaseWidth * scale);
-        var height = (int)Math.Round(_resizeBaseHeight * scale);
+        var logicalWidth = double.IsNaN(rawWidth)
+            ? _resizeStartWidth
+            : Math.Round(WidgetMetrics.ClampCustom((rawWidth + _resizeBiasX) / density));
+
+        var logicalHeight = double.IsNaN(rawHeight)
+            ? _resizeStartHeight
+            : Math.Round(WidgetMetrics.ClampCustom((rawHeight + _resizeBiasY) / density));
+
+        if (Math.Abs(logicalWidth - Definition.CustomWidth) < 0.5
+            && Math.Abs(logicalHeight - Definition.CustomHeight) < 0.5)
+        {
+            return;
+        }
+
+        Definition.CustomWidth = logicalWidth;
+        Definition.CustomHeight = logicalHeight;
+
+        var width = (int)Math.Round(logicalWidth * density);
+        var height = (int)Math.Round(logicalHeight * density);
         var (x, y) = ClampToWorkArea(
             (int)Math.Round(_resizeAnchorX - (_resizeOriginFx * width)),
             (int)Math.Round(_resizeAnchorY - (_resizeOriginFy * height)),
@@ -561,14 +581,12 @@ public sealed partial class WidgetHostWindow : Window
         Definition.X = x;
         Definition.Y = y;
 
-        var factor = scale / _resizeStartScale;
-        _resizePreview.ScaleX = factor;
-        _resizePreview.ScaleY = factor;
+        // A real re-layout rather than a render transform: the content is supposed to respond to
+        // the new shape, which a uniform zoom cannot do. Relayout skips the chrome and the timers,
+        // so this stays cheap enough for every pointer sample.
+        Surface.Relayout();
 
         PlaceWindow(x, y, width, height, _resizeDpi, applyRegion: false);
-
-        // Definition.Scale is already the live value, so the wallpaper layer stays registered with
-        // the screen while the widget grows.
         Surface.SetScreenPosition(x, y);
     }
 
@@ -581,13 +599,8 @@ public sealed partial class WidgetHostWindow : Window
 
         _resizing = false;
 
-        Surface.RenderTransform = null;
-        Surface.Width = double.NaN;
-        Surface.Height = double.NaN;
-        Surface.HorizontalAlignment = HorizontalAlignment.Stretch;
-        Surface.VerticalAlignment = VerticalAlignment.Stretch;
-
-        if (Math.Abs(Definition.Scale - _resizeStartScale) < 0.001)
+        if (Math.Abs(Definition.CustomWidth - _resizeStartWidth) < 0.5
+            && Math.Abs(Definition.CustomHeight - _resizeStartHeight) < 0.5)
         {
             // Nothing to persist, but the rounded corners BeginResize dropped still have to
             // come back — otherwise a grab that went nowhere leaves the widget square.
@@ -596,8 +609,8 @@ public sealed partial class WidgetHostWindow : Window
             return;
         }
 
-        // Rebuilds the content at the final scale and re-reads the monitor DPI the gesture froze.
-        // ApplyGeometry restores the region as part of placing the window.
+        // Rebuilds the content at the final footprint and re-reads the monitor DPI the gesture
+        // froze. ApplyGeometry restores the region as part of placing the window.
         ApplyDefinition(Definition);
         DefinitionChanged?.Invoke(this, Definition);
     }
@@ -704,16 +717,32 @@ public sealed partial class WidgetHostWindow : Window
         menu.Items.Add(new MenuFlyoutSeparator());
 
         var sizes = new MenuFlyoutSubItem { Text = "サイズ" };
-        foreach (var size in WidgetCatalog.Get(Definition.Kind).SupportedSizes)
+        foreach (var size in WidgetCatalog.Get(Definition.Kind).SupportedSizes.Append(WidgetSize.Custom))
         {
             var captured = size;
             var item = new RadioMenuFlyoutItem
             {
-                Text = WidgetMetrics.GetDisplayName(size),
+                Text = size == WidgetSize.Custom
+                    ? $"{WidgetMetrics.GetDisplayName(size)}（端をドラッグ）"
+                    : WidgetMetrics.GetDisplayName(size),
                 GroupName = $"size_{Definition.Id}",
                 IsChecked = Definition.Size == size,
             };
-            item.Click += (_, _) => Mutate(d => d.Size = captured);
+
+            item.Click += (_, _) => Mutate(d =>
+            {
+                // Seed the free-form footprint from whatever was showing, so picking カスタム
+                // never makes the widget jump — it only unlocks the edges.
+                if (captured == WidgetSize.Custom && d.Size != WidgetSize.Custom)
+                {
+                    var (w, h) = WidgetMetrics.GetSize(d.Size);
+                    d.CustomWidth = WidgetMetrics.ClampCustom(w);
+                    d.CustomHeight = WidgetMetrics.ClampCustom(h);
+                }
+
+                d.Size = captured;
+            });
+
             sizes.Items.Add(item);
         }
 

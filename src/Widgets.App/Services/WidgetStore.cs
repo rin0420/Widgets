@@ -215,7 +215,7 @@ public sealed class WidgetStore
         // On a short screen the stack can overflow; pull anything past the bottom back into view.
         foreach (var def in doc.Widgets)
         {
-            var (_, h) = WidgetMetrics.GetSize(def.Size);
+            var (_, h) = WidgetMetrics.GetSize(def);
             def.Y = (int)Math.Min(def.Y, Math.Max(0, screenHeight - (h + Margin) * scale));
         }
 

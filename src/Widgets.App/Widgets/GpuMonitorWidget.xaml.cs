@@ -38,6 +38,7 @@ public sealed partial class GpuMonitorWidget : WidgetViewBase
     private bool _colorByLoad = true;
     private bool _vramAllowed;
     private bool _showGpuName;
+    private bool _showFps;
     private bool _subscribed;
 
     public GpuMonitorWidget()
@@ -52,6 +53,7 @@ public sealed partial class GpuMonitorWidget : WidgetViewBase
         var showText = context.GetBool(WidgetSettingKeys.ShowPercentageText, true);
         _colorByLoad = context.GetBool(WidgetSettingKeys.ColorByLoad, true);
         _showGpuName = context.GetBool(WidgetSettingKeys.ShowGpuName, true);
+        _showFps = context.GetBool(WidgetSettingKeys.ShowFps, true);
         var showVramSetting = context.GetBool(WidgetSettingKeys.ShowVram, true);
         _vramAllowed = context.Size != WidgetSize.Small && showVramSetting;
 
@@ -378,7 +380,12 @@ public sealed partial class GpuMonitorWidget : WidgetViewBase
 
             if (_caption is not null)
             {
-                _caption.Text = _showGpuName && HardwareInfo.GpuName.Length > 0 ? HardwareInfo.GpuName : "GPU";
+                var name = _showGpuName && HardwareInfo.GpuName.Length > 0 ? HardwareInfo.GpuName : "GPU";
+
+                _caption.Text = _showFps && stats.HasFrameRate
+                    ? $"{name} ・ {stats.Fps:0} fps"
+                    : name;
+
                 _caption.Foreground = new SolidColorBrush(WidgetVisuals.Secondary(theme));
             }
         }

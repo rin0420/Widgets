@@ -32,6 +32,13 @@ public enum WidgetSize
     Large,
     Wide,
     Tall,
+
+    /// <summary>
+    /// Free-form footprint held in <see cref="WidgetDefinition.CustomWidth"/> /
+    /// <see cref="WidgetDefinition.CustomHeight"/>. This is the only size that can be dragged;
+    /// the presets above are fixed by definition.
+    /// </summary>
+    Custom,
 }
 
 /// <summary>Where a widget window sits in the desktop z-order.</summary>

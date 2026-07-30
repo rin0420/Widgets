@@ -18,6 +18,11 @@ public sealed class WidgetDefinition
 
     public WidgetSize Size { get; set; } = WidgetSize.Small;
 
+    /// <summary>Footprint in logical pixels when <see cref="Size"/> is <see cref="WidgetSize.Custom"/>.</summary>
+    public double CustomWidth { get; set; } = 176;
+
+    public double CustomHeight { get; set; } = 176;
+
     /// <summary>Position in physical (device) pixels on the virtual screen, so multi-monitor DPI mixes stay stable.</summary>
     public int X { get; set; }
 

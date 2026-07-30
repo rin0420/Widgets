@@ -23,7 +23,16 @@ public sealed class WidgetRenderContext
 
     public required double Height { get; init; }
 
-    public WidgetSize Size => Definition.Size;
+    /// <summary>
+    /// The footprint the renderer should lay itself out for. For <see cref="WidgetSize.Custom"/>
+    /// this is the preset the free-form size most resembles, so every renderer's existing
+    /// <c>context.Size switch</c> reflows with the drag instead of falling through to the smallest
+    /// layout. Use <see cref="Width"/>/<see cref="Height"/> for anything that needs exact pixels.
+    /// </summary>
+    public required WidgetSize Size { get; init; }
+
+    /// <summary>True when the user is sizing this widget by hand rather than picking a preset.</summary>
+    public bool IsCustom { get; init; }
 
     /// <summary>True when drawn in the editor preview, where live data may be replaced by samples.</summary>
     public bool IsPreview { get; init; }

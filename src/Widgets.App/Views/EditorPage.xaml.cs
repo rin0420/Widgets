@@ -41,6 +41,8 @@ public sealed partial class EditorPage : Page
     /// <summary>Diameter of the eight drag handles drawn around the preview.</summary>
     private const double HandleSize = 14;
 
+    private List<WidgetSize> _sizeOptions = [];
+
     private WidgetDefinition _definition = null!;
     private WidgetDefinition _snapshot = null!;
     private WidgetSurface? _surface;
@@ -52,11 +54,17 @@ public sealed partial class EditorPage : Page
     // The pointer is tracked against PreviewBackdrop rather than against the handle itself:
     // the handles move as the preview grows, so handle-relative deltas would feed back into
     // themselves and make the resize accelerate.
+    private readonly List<Border> _handles = [];
+
     private Border? _resizeHandle;
     private Windows.Foundation.Point _resizeOrigin;
-    private double _resizeStartScale;
+    private double _resizeStartWidth;
+    private double _resizeStartHeight;
     private double _resizeDirectionX;
     private double _resizeDirectionY;
+
+    /// <summary>Preview pixels per logical widget pixel, so a drag in screen space maps back to the footprint.</summary>
+    private double _previewScale = 1;
     /// <summary>
     /// Starts true so the control event handlers stay inert until <see cref="OnNavigatedTo"/> has
     /// supplied a definition — configuring the slider ranges in the constructor raises ValueChanged
@@ -136,19 +144,21 @@ public sealed partial class EditorPage : Page
         SizeSelector.Items.Clear();
         SizeCombo.Items.Clear();
 
-        foreach (var size in entry.SupportedSizes)
+        // Custom is offered for every kind, after that kind's own presets.
+        _sizeOptions = [.. entry.SupportedSizes, WidgetSize.Custom];
+
+        foreach (var size in _sizeOptions)
         {
             SizeSelector.Items.Add(new RadioButton { Content = WidgetMetrics.GetDisplayName(size), Tag = size });
 
-            var (width, height) = WidgetMetrics.GetSize(size);
-            SizeCombo.Items.Add(new ComboBoxItem
-            {
-                Content = $"{WidgetMetrics.GetDisplayName(size)}（{width:0}×{height:0}）",
-                Tag = size,
-            });
+            var label = size == WidgetSize.Custom
+                ? $"{WidgetMetrics.GetDisplayName(size)}（ドラッグで調整）"
+                : $"{WidgetMetrics.GetDisplayName(size)}（{WidgetMetrics.GetSize(size).Width:0}×{WidgetMetrics.GetSize(size).Height:0}）";
+
+            SizeCombo.Items.Add(new ComboBoxItem { Content = label, Tag = size });
         }
 
-        var index = Math.Max(0, entry.SupportedSizes.ToList().IndexOf(_definition.Size));
+        var index = Math.Max(0, _sizeOptions.IndexOf(_definition.Size));
         SizeSelector.SelectedIndex = index;
         SizeCombo.SelectedIndex = index;
 
@@ -256,13 +266,15 @@ public sealed partial class EditorPage : Page
             BuildPreviewFrame();
         }
 
-        var (width, height) = WidgetMetrics.GetSize(_definition.Size);
+        var (width, height) = WidgetMetrics.GetSize(_definition);
 
         // Leave room for the handles, which straddle the edge and stick out by half their size.
         var margin = 64 + HandleSize;
         var availableWidth = Math.Max(160, PreviewBackdrop.ActualWidth - margin);
         var availableHeight = Math.Max(160, PreviewBackdrop.ActualHeight - margin);
         var scale = Math.Min(_definition.Scale, Math.Min(availableWidth / width, availableHeight / height));
+
+        _previewScale = scale;
 
         _surface!.Width = width;
         _surface.Height = height;
@@ -274,7 +286,26 @@ public sealed partial class EditorPage : Page
 
         _surface.SetDefinition(_definition, true);
 
+        UpdateHandleVisibility();
         UpdatePreviewSizeText();
+    }
+
+    /// <summary>
+    /// The presets are fixed footprints, so only <see cref="WidgetSize.Custom"/> may be dragged.
+    /// Hiding the handles rather than ignoring the drag keeps the frame honest about what it offers.
+    /// </summary>
+    private void UpdateHandleVisibility()
+    {
+        var custom = _definition.Size == WidgetSize.Custom;
+
+        foreach (var handle in _handles)
+        {
+            handle.Visibility = custom ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        SizeHintText.Text = custom
+            ? "枠のハンドルをドラッグしてサイズを変更できます"
+            : "決まったサイズです。自由に変えるには「カスタム」を選んでください";
     }
 
     /// <summary>
@@ -362,32 +393,41 @@ public sealed partial class EditorPage : Page
             BorderThickness = new Thickness(2),
         };
 
-        ToolTipService.SetToolTip(handle, "ドラッグしてサイズを微調整");
+        ToolTipService.SetToolTip(handle, "ドラッグしてサイズを変更");
 
         handle.PointerPressed += (sender, args) => OnHandlePressed((Border)sender, directionX, directionY, args);
         handle.PointerMoved += OnHandleMoved;
         handle.PointerReleased += OnHandleReleased;
         handle.PointerCaptureLost += OnHandleReleased;
 
+        _handles.Add(handle);
         _previewFrame!.Children.Add(handle);
     }
 
     private void OnHandlePressed(Border handle, double directionX, double directionY, PointerRoutedEventArgs e)
     {
-        if (_definition is null || !handle.CapturePointer(e.Pointer))
+        if (_definition is null || _definition.Size != WidgetSize.Custom || !handle.CapturePointer(e.Pointer))
         {
             return;
         }
 
+        var (width, height) = WidgetMetrics.GetSize(_definition);
+
         _resizeHandle = handle;
         _resizeDirectionX = directionX;
         _resizeDirectionY = directionY;
-        _resizeStartScale = _definition.Scale;
+        _resizeStartWidth = width;
+        _resizeStartHeight = height;
         _resizeOrigin = e.GetCurrentPoint(PreviewBackdrop).Position;
 
         e.Handled = true;
     }
 
+    /// <summary>
+    /// Drags the footprint itself rather than a zoom factor, so the content genuinely re-lays out
+    /// as the box changes shape. Each axis moves independently — a corner handle can change the
+    /// aspect ratio, which is the whole point of a custom size.
+    /// </summary>
     private void OnHandleMoved(object sender, PointerRoutedEventArgs e)
     {
         if (_resizeHandle is null || !ReferenceEquals(_resizeHandle, sender) || _definition is null)
@@ -395,18 +435,18 @@ public sealed partial class EditorPage : Page
             return;
         }
 
-        var (baseWidth, baseHeight) = WidgetMetrics.GetSize(_definition.Size);
         var position = e.GetCurrentPoint(PreviewBackdrop).Position;
 
-        // The preview is centred, so an edge dragged by d changes the whole box by 2d.
-        var deltaX = (position.X - _resizeOrigin.X) * _resizeDirectionX * 2 / baseWidth;
-        var deltaY = (position.Y - _resizeOrigin.Y) * _resizeDirectionY * 2 / baseHeight;
+        // The preview is centred and drawn at _previewScale, so an edge dragged by d screen pixels
+        // moves the opposite edge too: the footprint changes by 2d, in logical widget pixels.
+        var scale = _previewScale > 0 ? _previewScale : 1;
+        var width = _resizeStartWidth + ((position.X - _resizeOrigin.X) * _resizeDirectionX * 2 / scale);
+        var height = _resizeStartHeight + ((position.Y - _resizeOrigin.Y) * _resizeDirectionY * 2 / scale);
 
-        var delta = _resizeDirectionX != 0 && _resizeDirectionY != 0
-            ? (deltaX + deltaY) / 2                       // corner: average both axes
-            : _resizeDirectionX != 0 ? deltaX : deltaY;   // edge: the axis it can move on
+        SetCustomSize(
+            _resizeDirectionX != 0 ? width : _resizeStartWidth,
+            _resizeDirectionY != 0 ? height : _resizeStartHeight);
 
-        SetScale(_resizeStartScale + delta);
         e.Handled = true;
     }
 
@@ -422,32 +462,46 @@ public sealed partial class EditorPage : Page
         handle.ReleasePointerCapture(e.Pointer);
     }
 
-    /// <summary>Writes a scale from any source (drag or slider) through to the definition and the UI.</summary>
-    private void SetScale(double value)
+    /// <summary>Writes a dragged footprint through to the definition and the UI.</summary>
+    private void SetCustomSize(double width, double height)
     {
-        var scale = Math.Clamp(Math.Round(value, 2), ScaleSlider.Minimum, ScaleSlider.Maximum);
+        var w = Math.Round(WidgetMetrics.ClampCustom(width));
+        var h = Math.Round(WidgetMetrics.ClampCustom(height));
 
-        if (Math.Abs(scale - _definition.Scale) < 0.0001)
+        if (Math.Abs(w - _definition.CustomWidth) < 0.5 && Math.Abs(h - _definition.CustomHeight) < 0.5)
         {
             return;
         }
 
-        _definition.Scale = scale;
+        _definition.CustomWidth = w;
+        _definition.CustomHeight = h;
 
-        _loading = true;
-        ScaleSlider.Value = scale;
-        _loading = false;
+        Apply();
+    }
 
-        UpdateScaleHeader();
+    /// <summary>Switches the footprint, seeding a custom size from whatever was on screen before.</summary>
+    private void ApplySizeOption(WidgetSize size)
+    {
+        if (size == WidgetSize.Custom && _definition.Size != WidgetSize.Custom)
+        {
+            // Start from the preset that was showing so the widget does not jump on switching.
+            var (width, height) = WidgetMetrics.GetSize(_definition.Size);
+            _definition.CustomWidth = WidgetMetrics.ClampCustom(width);
+            _definition.CustomHeight = WidgetMetrics.ClampCustom(height);
+        }
+
+        _definition.Size = size;
         Apply();
     }
 
     private void UpdatePreviewSizeText()
     {
-        var (width, height) = WidgetMetrics.GetSize(_definition.Size);
+        var (width, height) = WidgetMetrics.GetSize(_definition);
         var scale = _definition.Scale;
 
-        PreviewSizeText.Text = $"{width * scale:0} × {height * scale:0} px（×{scale:0.00}）";
+        PreviewSizeText.Text = _definition.Size == WidgetSize.Custom
+            ? $"{width * scale:0} × {height * scale:0} px（カスタム ×{scale:0.00}）"
+            : $"{width * scale:0} × {height * scale:0} px（×{scale:0.00}）";
     }
 
     private void OnPreviewBackdropSizeChanged(object sender, SizeChangedEventArgs e) => RefreshPreview();
@@ -486,8 +540,7 @@ public sealed partial class EditorPage : Page
         SizeCombo.SelectedIndex = SizeSelector.SelectedIndex;
         _loading = false;
 
-        _definition.Size = size;
-        Apply();
+        ApplySizeOption(size);
     }
 
     private void OnSizeComboChanged(object sender, SelectionChangedEventArgs e)
@@ -501,8 +554,7 @@ public sealed partial class EditorPage : Page
         SizeSelector.SelectedIndex = SizeCombo.SelectedIndex;
         _loading = false;
 
-        _definition.Size = size;
-        Apply();
+        ApplySizeOption(size);
     }
 
     private void OnScaleChanged(object sender, RangeBaseValueChangedEventArgs e)
@@ -975,6 +1027,7 @@ public sealed partial class EditorPage : Page
                 ContentPanel.Children.Add(GaugeStyleCombo());
                 ContentPanel.Children.Add(SettingToggle("VRAM を表示", WidgetSettingKeys.ShowVram, true));
                 ContentPanel.Children.Add(SettingToggle("GPU 名を表示", WidgetSettingKeys.ShowGpuName, true));
+                ContentPanel.Children.Add(SettingToggle("FPS を表示", WidgetSettingKeys.ShowFps, true));
                 ContentPanel.Children.Add(SettingToggle("数値を表示", WidgetSettingKeys.ShowPercentageText, true));
                 ContentPanel.Children.Add(SettingToggle("負荷に応じて色を変える", WidgetSettingKeys.ColorByLoad, true));
                 break;
@@ -1099,6 +1152,7 @@ public sealed partial class EditorPage : Page
         [
             ("cpu", "CPU"), ("ram", "メモリ"), ("disk", "ディスク"), ("net", "ネットワーク"),
             ("gpu", "GPU"), ("diskio", "ディスク I/O"), ("proc", "プロセス数"), ("uptime", "稼働時間"),
+            ("fps", "FPS"),
         ];
 
         // Order matters here: this list *is* the Metrics setting, in display order.

@@ -69,6 +69,9 @@ public static class WidgetSettingKeys
     public const string ShowVram = "showVram";
     public const string ShowGpuName = "showGpuName";
 
+    /// <summary>Desktop composition frame rate, shown alongside the GPU load.</summary>
+    public const string ShowFps = "showFps";
+
     // Network monitor
     public const string NetworkUnit = "networkUnit";                 // "Bits", "Bytes"
     public const string NetworkScaleMode = "networkScaleMode";       // "Auto", "Fixed"
@@ -379,6 +382,17 @@ public static class WidgetCatalog
 /// <summary>Logical (96 DPI) pixel footprints for each <see cref="WidgetSize"/>.</summary>
 public static class WidgetMetrics
 {
+    /// <summary>Smallest custom footprint that still leaves room for padding and a glyph.</summary>
+    public const double MinCustom = 96;
+
+    public const double MaxCustom = 1200;
+
+    /// <summary>The fixed footprints, in the order they are offered in the editor.</summary>
+    public static readonly WidgetSize[] Presets =
+    [
+        WidgetSize.Small, WidgetSize.Medium, WidgetSize.Large, WidgetSize.Wide, WidgetSize.Tall
+    ];
+
     public static (double Width, double Height) GetSize(WidgetSize size) => size switch
     {
         WidgetSize.Small => (176, 176),
@@ -389,6 +403,56 @@ public static class WidgetMetrics
         _ => (176, 176),
     };
 
+    /// <summary>The footprint a definition actually occupies, honouring <see cref="WidgetSize.Custom"/>.</summary>
+    public static (double Width, double Height) GetSize(WidgetDefinition definition)
+        => definition.Size == WidgetSize.Custom
+            ? (ClampCustom(definition.CustomWidth), ClampCustom(definition.CustomHeight))
+            : GetSize(definition.Size);
+
+    public static double ClampCustom(double value)
+        => double.IsFinite(value) ? Math.Clamp(value, MinCustom, MaxCustom) : MinCustom;
+
+    /// <summary>
+    /// The preset a free-form footprint most resembles. Renderers branch on this to decide their
+    /// layout (column counts, which rows are worth showing), so a custom widget reflows like the
+    /// preset it is closest to instead of falling through to the smallest layout.
+    /// Distances are compared in log space so "twice as wide" and "half as wide" cost the same.
+    /// </summary>
+    public static WidgetSize NearestPreset(double width, double height)
+    {
+        width = Math.Max(1, width);
+        height = Math.Max(1, height);
+
+        var best = WidgetSize.Small;
+        var bestScore = double.MaxValue;
+
+        foreach (var preset in Presets)
+        {
+            var (pw, ph) = GetSize(preset);
+            var score = Math.Abs(Math.Log(width / pw)) + Math.Abs(Math.Log(height / ph));
+
+            if (score < bestScore)
+            {
+                bestScore = score;
+                best = preset;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// How much larger the footprint is than the preset it was matched to. Typography is multiplied
+    /// by this so text keeps growing smoothly between two presets rather than jumping at the
+    /// boundary. The geometric mean is used so a widget stretched on one axis only grows type by half.
+    /// </summary>
+    public static double TypeScaleFor(double width, double height, WidgetSize preset)
+    {
+        var (pw, ph) = GetSize(preset);
+        var factor = Math.Sqrt((Math.Max(1, width) / pw) * (Math.Max(1, height) / ph));
+        return Math.Clamp(factor, 0.6, 1.8);
+    }
+
     public static string GetDisplayName(WidgetSize size) => size switch
     {
         WidgetSize.Small => "小",
@@ -396,6 +460,7 @@ public static class WidgetMetrics
         WidgetSize.Large => "大",
         WidgetSize.Wide => "横長",
         WidgetSize.Tall => "縦長",
+        WidgetSize.Custom => "カスタム",
         _ => size.ToString(),
     };
 }

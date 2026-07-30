@@ -103,6 +103,13 @@ public sealed class WidgetSurface : ContentControl
         Rebuild();
     }
 
+    /// <summary>
+    /// Re-lays the content out at the definition's current footprint, skipping the chrome and the
+    /// tick timers. This is the live-resize path: a custom-size drag calls it on every pointer
+    /// sample, where rebuilding acrylic brushes and restarting timers would stutter.
+    /// </summary>
+    public void Relayout() => Rebuild(rebuildChrome: false);
+
     /// <summary>Moves the wallpaper layer to keep it registered with the screen. Cheap enough to call while dragging.</summary>
     public void SetScreenPosition(int physicalX, int physicalY)
     {
@@ -136,7 +143,7 @@ public sealed class WidgetSurface : ContentControl
         _viewKind = null;
     }
 
-    private void Rebuild()
+    private void Rebuild(bool rebuildChrome = true)
     {
         var definition = Definition;
         if (definition is null)
@@ -153,9 +160,28 @@ public sealed class WidgetSurface : ContentControl
             var settings = MergeSettings(definition, slot);
             var theme = definition.Theme;
 
-            var (width, height) = WidgetMetrics.GetSize(definition.Size);
+            var (width, height) = WidgetMetrics.GetSize(definition);
             _root.Width = width;
             _root.Height = height;
+
+            // A free-form footprint has no preset to switch on, so it borrows the layout of the
+            // preset it most resembles and folds the leftover difference into the type scale. That
+            // is what makes a dragged widget reflow (columns, rows, which lines survive) instead of
+            // just being the small layout stretched over a bigger box.
+            var custom = definition.Size == WidgetSize.Custom;
+            var layoutSize = custom ? WidgetMetrics.NearestPreset(width, height) : definition.Size;
+
+            // Cloned, not mutated: every renderer already routes its font sizes through
+            // WidgetVisuals.Size(theme, …), so folding the factor into FontScale scales typography
+            // everywhere without touching all sixteen renderers. The chrome keeps the real theme —
+            // padding and corner radius should not grow with the type.
+            var contentTheme = theme;
+            if (custom)
+            {
+                contentTheme = theme.Clone();
+                contentTheme.FontScale = theme.FontScale
+                    * WidgetMetrics.TypeScaleFor(width, height, layoutSize);
+            }
 
             // The host sizes the window to logical * Scale, so the content has to be scaled to match
             // or it renders at 1x inside an oversized window. A render transform keeps text and
@@ -175,7 +201,10 @@ public sealed class WidgetSurface : ContentControl
                 ? new ScaleTransform { ScaleX = contentScale, ScaleY = contentScale }
                 : null;
 
-            ApplyChrome(theme);
+            if (rebuildChrome)
+            {
+                ApplyChrome(theme);
+            }
 
             var pad = Math.Max(0, theme.Padding);
             var edge = Math.Max(0, theme.BorderThickness);
@@ -194,13 +223,18 @@ public sealed class WidgetSurface : ContentControl
                 Definition = definition,
                 EffectiveKind = kind,
                 Settings = settings,
-                Theme = theme,
+                Theme = contentTheme,
+                Size = layoutSize,
+                IsCustom = custom,
                 Width = Math.Max(1, width - 2 * (pad + edge)),
                 Height = Math.Max(1, height - 2 * (pad + edge)),
                 IsPreview = _isPreview,
             });
 
-            Resume();
+            if (rebuildChrome)
+            {
+                Resume();
+            }
         }
         catch (Exception ex)
         {

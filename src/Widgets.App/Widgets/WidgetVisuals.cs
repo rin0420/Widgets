@@ -48,9 +48,13 @@ internal static class WidgetVisuals
     public static FontWeight Weight(WidgetTheme theme, int delta = 0)
         => new() { Weight = (ushort)Math.Clamp(theme.FontWeight + delta, 100, 900) };
 
-    /// <summary>Applies the theme's type scale to a renderer's intrinsic font size.</summary>
+    /// <summary>
+    /// Applies the theme's type scale to a renderer's intrinsic font size. The range is wider than
+    /// the editor's 0.5–2.0 slider because a custom-sized widget folds its responsive type factor
+    /// into the same field (see <c>WidgetSurface.Rebuild</c>), so the product can exceed the slider.
+    /// </summary>
     public static double Size(WidgetTheme theme, double intrinsic)
-        => Math.Max(6.0, intrinsic * Math.Clamp(theme.FontScale, 0.5, 2.0));
+        => Math.Max(6.0, intrinsic * Math.Clamp(theme.FontScale, 0.3, 4.0));
 
     public static Color Tint(WidgetTheme theme)
         => ColorUtil.Parse(theme.TintColor, Colors.White);

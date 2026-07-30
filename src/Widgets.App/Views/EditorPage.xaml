@@ -43,8 +43,7 @@
                             HorizontalAlignment="Right" Margin="12,0,0,0">
                     <TextBlock x:Name="PreviewSizeText" HorizontalAlignment="Right"
                                FontWeight="SemiBold" />
-                    <TextBlock Text="枠のハンドルをドラッグすると微調整できます"
-                               HorizontalAlignment="Right"
+                    <TextBlock x:Name="SizeHintText" HorizontalAlignment="Right"
                                Style="{StaticResource CaptionTextStyle}" />
                 </StackPanel>
             </Grid>
