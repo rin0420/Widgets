@@ -952,6 +952,18 @@ public sealed partial class EditorPage : Page
             Visibility = Visibility.Collapsed,
         };
 
+        // A drop can carry anything the desktop lets the user drag — text selected in another app,
+        // a file, a link. Letting an unknown key through would poison the Metrics setting and then
+        // throw out of RebuildLists, which clears the list before it rebuilds it.
+        bool IsKnownMetric(string? key) => key is not null && metrics.Any(m => m.Key == key);
+
+        // Refuse foreign payloads while they are still over the list, so the pointer never shows a
+        // "move here" cursor for something the drop handler is only going to throw away.
+        void AcceptMetricDrag(DragEventArgs args)
+            => args.AcceptedOperation = args.DataView.Contains(StandardDataFormats.Text)
+                ? DataPackageOperation.Move
+                : DataPackageOperation.None;
+
         void Commit()
         {
             _definition.Set(WidgetSettingKeys.Metrics, string.Join(',', selectedKeys));
@@ -999,6 +1011,11 @@ public sealed partial class EditorPage : Page
             try
             {
                 var key = await e.DataView.GetTextAsync();
+                if (!IsKnownMetric(key))
+                {
+                    return;
+                }
+
                 var targetKey = (string)row.Tag!;
                 var targetIndex = selectedKeys.IndexOf(targetKey);
                 if (targetIndex < 0)
@@ -1058,7 +1075,7 @@ public sealed partial class EditorPage : Page
                     HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 };
 
-                row.DragOver += (_, args) => args.AcceptedOperation = DataPackageOperation.Move;
+                row.DragOver += (_, args) => AcceptMetricDrag(args);
                 row.Drop += (_, args) => HandleRowDrop(args, row);
 
                 selectedList.Items.Add(row);
@@ -1111,7 +1128,7 @@ public sealed partial class EditorPage : Page
 
         // List-level DragOver/Drop cover the space a per-row handler doesn't: dropping below the
         // last row, or into a list that has no rows at all (e.g. all 8 metrics already selected).
-        selectedList.DragOver += (_, e) => e.AcceptedOperation = DataPackageOperation.Move;
+        selectedList.DragOver += (_, e) => AcceptMetricDrag(e);
         selectedList.Drop += async (_, e) =>
         {
             var deferral = e.GetDeferral();
@@ -1119,7 +1136,10 @@ public sealed partial class EditorPage : Page
             try
             {
                 var key = await e.DataView.GetTextAsync();
-                MoveSelected(key, selectedKeys.Count);
+                if (IsKnownMetric(key))
+                {
+                    MoveSelected(key, selectedKeys.Count);
+                }
             }
             catch (Exception ex)
             {
@@ -1131,7 +1151,7 @@ public sealed partial class EditorPage : Page
             }
         };
 
-        availableList.DragOver += (_, e) => e.AcceptedOperation = DataPackageOperation.Move;
+        availableList.DragOver += (_, e) => AcceptMetricDrag(e);
         availableList.Drop += async (_, e) =>
         {
             var deferral = e.GetDeferral();
@@ -1139,7 +1159,10 @@ public sealed partial class EditorPage : Page
             try
             {
                 var key = await e.DataView.GetTextAsync();
-                RemoveFromSelected(key);
+                if (IsKnownMetric(key))
+                {
+                    RemoveFromSelected(key);
+                }
             }
             catch (Exception ex)
             {
