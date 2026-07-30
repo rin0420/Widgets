@@ -96,13 +96,12 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
         var tileWidth = Math.Max(24, (context.Width - (columns - 1) * 8) / columns);
         var tileHeight = Math.Max(24, (context.Height - (rows - 1) * 8) / rows);
 
-        // Eight metrics can shrink a tile below what a ring gauge reads well at; fall back to the
-        // more compact bar instead of drawing an illegibly tiny circle.
-        var effectiveStyle = style == "Ring" && (tileHeight < 56 || tileWidth < 56) ? "Bar" : style;
-
         for (var i = 0; i < metrics.Count; i++)
         {
-            var tile = effectiveStyle switch
+            // The chosen style is always the style drawn. Swapping a small ring for a bar here
+            // used to make a preview rendered at a different footprint — the preset chips, which
+            // lay the widget out as Small — disagree with the placed widget.
+            var tile = style switch
             {
                 "Bar" => BuildBar(theme, metrics[i], tileWidth, tileHeight, showText),
                 "Sparkline" => BuildSpark(theme, metrics[i], tileWidth, tileHeight, showText),
@@ -239,8 +238,10 @@ public sealed partial class SystemMonitorWidget : WidgetViewBase
         var ring = WidgetVisuals.Ring(gauge, thickness, accent);
         dial.Children.Add(ring);
 
+        // A dial keeps its shape at any tile size, but the reading inside it stops being legible on
+        // a very small one. Drop just the text in that case — the gauge stays the shape that was picked.
         TextBlock? value = null;
-        if (showText)
+        if (showText && gauge >= 34)
         {
             value = WidgetVisuals.Text(theme, gauge * 0.24, WidgetVisuals.Tint(theme), 100);
             value.HorizontalAlignment = HorizontalAlignment.Center;

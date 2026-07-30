@@ -7,6 +7,7 @@ using Widgets.App.Common;
 using Widgets.App.Controls;
 using Widgets.App.Models;
 using Widgets.App.Services;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage.Pickers;
 using Windows.UI;
 
@@ -918,44 +919,265 @@ public sealed partial class EditorPage : Page
             ("gpu", "GPU"), ("diskio", "ディスク I/O"), ("proc", "プロセス数"), ("uptime", "稼働時間"),
         ];
 
-        var selected = _definition.GetString(WidgetSettingKeys.Metrics, "cpu,ram")
+        // Order matters here: this list *is* the Metrics setting, in display order.
+        var selectedKeys = _definition.GetString(WidgetSettingKeys.Metrics, "cpu,ram")
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToHashSet();
+            .Where(k => metrics.Any(m => m.Key == k))
+            .Distinct()
+            .ToList();
 
-        var panel = new StackPanel { Spacing = 4 };
-        panel.Children.Add(new TextBlock
+        var selectedList = new ListView
         {
-            Text = "表示する項目",
-            Style = (Style)Application.Current.Resources["FieldLabelTextStyle"],
-        });
+            SelectionMode = ListViewSelectionMode.None,
+            CanDragItems = true,
+            AllowDrop = true,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        };
 
-        foreach (var (key, label) in metrics)
+        var availableList = new ListView
         {
-            var check = new CheckBox { Content = label, IsChecked = selected.Contains(key) };
+            SelectionMode = ListViewSelectionMode.None,
+            CanDragItems = true,
+            AllowDrop = true,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        };
 
-            void Commit()
-            {
-                if (check.IsChecked == true)
-                {
-                    selected.Add(key);
-                }
-                else
-                {
-                    selected.Remove(key);
-                }
+        var emptyHint = new TextBlock
+        {
+            Text = "1 つ以上選んでください（未選択の場合は CPU が表示されます）",
+            TextWrapping = TextWrapping.Wrap,
+            Style = (Style)Application.Current.Resources["CaptionTextStyle"],
+            Visibility = Visibility.Collapsed,
+        };
 
-                _definition.Set(WidgetSettingKeys.Metrics,
-                    string.Join(',', metrics.Where(m => selected.Contains(m.Key)).Select(m => m.Key)));
-
-                Apply();
-            }
-
-            check.Checked += (_, _) => Commit();
-            check.Unchecked += (_, _) => Commit();
-            panel.Children.Add(check);
+        void Commit()
+        {
+            _definition.Set(WidgetSettingKeys.Metrics, string.Join(',', selectedKeys));
+            Apply();
         }
 
-        return panel;
+        // Every move — reorder within the selected list, or arriving from the available list —
+        // goes through here: remove the key wherever it currently sits, then insert it at the
+        // (index-adjusted) target. This keeps the two lists from ever disagreeing about who owns a key.
+        void MoveSelected(string key, int index)
+        {
+            var existingIndex = selectedKeys.IndexOf(key);
+            if (existingIndex >= 0)
+            {
+                selectedKeys.RemoveAt(existingIndex);
+                if (existingIndex < index)
+                {
+                    index--;
+                }
+            }
+
+            index = Math.Clamp(index, 0, selectedKeys.Count);
+            selectedKeys.Insert(index, key);
+
+            RebuildLists();
+            Commit();
+        }
+
+        void RemoveFromSelected(string key)
+        {
+            if (selectedKeys.Remove(key))
+            {
+                RebuildLists();
+                Commit();
+            }
+        }
+
+        async void HandleRowDrop(DragEventArgs e, ListViewItem row)
+        {
+            // Stop this from bubbling up to the ListView-level Drop handler below — otherwise a
+            // drop on a specific row would be processed twice (once here, once as "append at end").
+            e.Handled = true;
+            var deferral = e.GetDeferral();
+
+            try
+            {
+                var key = await e.DataView.GetTextAsync();
+                var targetKey = (string)row.Tag!;
+                var targetIndex = selectedKeys.IndexOf(targetKey);
+                if (targetIndex < 0)
+                {
+                    return;
+                }
+
+                var before = e.GetPosition(row).Y < row.ActualHeight / 2;
+                MoveSelected(key, before ? targetIndex : targetIndex + 1);
+            }
+            catch (Exception ex)
+            {
+                Crash.Log(ex, "EditorPage.MetricRowDrop");
+            }
+            finally
+            {
+                deferral.Complete();
+            }
+        }
+
+        void RebuildLists()
+        {
+            selectedList.Items.Clear();
+
+            foreach (var key in selectedKeys)
+            {
+                var metric = metrics.First(m => m.Key == key);
+
+                var handle = new TextBlock
+                {
+                    Text = "⠿",
+                    Opacity = 0.6,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                var label = new TextBlock { Text = metric.Label, VerticalAlignment = VerticalAlignment.Center };
+
+                var removeButton = new Button { Content = "✕", Padding = new Thickness(8, 4, 8, 4) };
+                ToolTipService.SetToolTip(removeButton, "削除");
+                removeButton.Click += (_, _) => RemoveFromSelected(key);
+
+                var grid = new Grid { ColumnSpacing = 8 };
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                Grid.SetColumn(label, 1);
+                Grid.SetColumn(removeButton, 2);
+                grid.Children.Add(handle);
+                grid.Children.Add(label);
+                grid.Children.Add(removeButton);
+
+                var row = new ListViewItem
+                {
+                    Content = grid,
+                    Tag = key,
+                    AllowDrop = true,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                };
+
+                row.DragOver += (_, args) => args.AcceptedOperation = DataPackageOperation.Move;
+                row.Drop += (_, args) => HandleRowDrop(args, row);
+
+                selectedList.Items.Add(row);
+            }
+
+            availableList.Items.Clear();
+
+            foreach (var (key, label) in metrics.Where(m => !selectedKeys.Contains(m.Key)))
+            {
+                var text = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center };
+
+                var addButton = new Button { Content = "＋", Padding = new Thickness(8, 4, 8, 4) };
+                ToolTipService.SetToolTip(addButton, "追加");
+                addButton.Click += (_, _) =>
+                {
+                    selectedKeys.Add(key);
+                    RebuildLists();
+                    Commit();
+                };
+
+                var grid = new Grid { ColumnSpacing = 8 };
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                Grid.SetColumn(addButton, 1);
+                grid.Children.Add(text);
+                grid.Children.Add(addButton);
+
+                availableList.Items.Add(new ListViewItem
+                {
+                    Content = grid,
+                    Tag = key,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                });
+            }
+
+            emptyHint.Visibility = selectedKeys.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        void OnDragItemsStarting(object sender, DragItemsStartingEventArgs e)
+        {
+            if (e.Items.Count > 0 && e.Items[0] is ListViewItem { Tag: string key })
+            {
+                e.Data.SetText(key);
+                e.Data.RequestedOperation = DataPackageOperation.Move;
+            }
+        }
+
+        selectedList.DragItemsStarting += OnDragItemsStarting;
+        availableList.DragItemsStarting += OnDragItemsStarting;
+
+        // List-level DragOver/Drop cover the space a per-row handler doesn't: dropping below the
+        // last row, or into a list that has no rows at all (e.g. all 8 metrics already selected).
+        selectedList.DragOver += (_, e) => e.AcceptedOperation = DataPackageOperation.Move;
+        selectedList.Drop += async (_, e) =>
+        {
+            var deferral = e.GetDeferral();
+
+            try
+            {
+                var key = await e.DataView.GetTextAsync();
+                MoveSelected(key, selectedKeys.Count);
+            }
+            catch (Exception ex)
+            {
+                Crash.Log(ex, "EditorPage.MetricListDrop");
+            }
+            finally
+            {
+                deferral.Complete();
+            }
+        };
+
+        availableList.DragOver += (_, e) => e.AcceptedOperation = DataPackageOperation.Move;
+        availableList.Drop += async (_, e) =>
+        {
+            var deferral = e.GetDeferral();
+
+            try
+            {
+                var key = await e.DataView.GetTextAsync();
+                RemoveFromSelected(key);
+            }
+            catch (Exception ex)
+            {
+                Crash.Log(ex, "EditorPage.MetricListDrop");
+            }
+            finally
+            {
+                deferral.Complete();
+            }
+        };
+
+        RebuildLists();
+
+        var selectedColumn = new StackPanel { Spacing = 6 };
+        selectedColumn.Children.Add(new TextBlock
+        {
+            Text = "表示する項目（ドラッグで並べ替え）",
+            Style = (Style)Application.Current.Resources["FieldLabelTextStyle"],
+        });
+        selectedColumn.Children.Add(selectedList);
+        selectedColumn.Children.Add(emptyHint);
+
+        var availableColumn = new StackPanel { Spacing = 6 };
+        availableColumn.Children.Add(new TextBlock
+        {
+            Text = "使わない項目",
+            Style = (Style)Application.Current.Resources["FieldLabelTextStyle"],
+        });
+        availableColumn.Children.Add(availableList);
+
+        var layout = new Grid { ColumnSpacing = 12 };
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetColumn(availableColumn, 1);
+        layout.Children.Add(selectedColumn);
+        layout.Children.Add(availableColumn);
+
+        return layout;
     }
 
     private ComboBox BuildDriveCombo()
@@ -1370,8 +1592,10 @@ public sealed partial class EditorPage : Page
 
         foreach (var preset in AppServices.Store.AllPresets)
         {
+            // Keep the widget's own size. The preview is scaled down to fit the chip anyway, and
+            // forcing Small laid the content out for a footprint the widget does not have — which
+            // is what made the chips show bar gauges for a widget drawing rings.
             var sample = _definition.Clone();
-            sample.Size = WidgetSize.Small;
             sample.Scale = 1.0;
             sample.Theme = preset.Theme.Clone();
 
