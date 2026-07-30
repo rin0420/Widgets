@@ -187,6 +187,22 @@ internal static class WindowHelper
         }
     }
 
+    /// <summary>
+    /// Drops the window region. A window that is about to be resized repeatedly would otherwise
+    /// stay clipped to the shape it had when the gesture started.
+    /// </summary>
+    public static void ClearWindowRegion(IntPtr hwnd)
+    {
+        try
+        {
+            Win32.SetWindowRgn(hwnd, IntPtr.Zero, true);
+        }
+        catch (Exception ex)
+        {
+            Crash.Log(ex, nameof(ClearWindowRegion));
+        }
+    }
+
     public static double GetScale(IntPtr hwnd)
     {
         var dpi = Win32.GetDpiForWindow(hwnd);

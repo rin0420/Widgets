@@ -219,15 +219,31 @@ public sealed partial class WidgetHostWindow : Window
         return ((int)Math.Round(logicalWidth * scale * dpiScale), (int)Math.Round(logicalHeight * scale * dpiScale));
     }
 
-    private void PlaceWindow(int x, int y, int width, int height, double dpiScale)
+    /// <param name="applyRegion">
+    /// False while a resize gesture is in flight. Reshaping the region builds a GDI object and
+    /// forces a full redraw through SetWindowRgn, which is far too much to repeat on every pointer
+    /// sample; the resize clears the region up front and restores it once the gesture ends.
+    /// </param>
+    private void PlaceWindow(int x, int y, int width, int height, double dpiScale, bool applyRegion = true)
     {
         AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
 
-        // The corner radius is authored in logical pixels against the unscaled widget, so it has to
-        // track both the per-widget scale and the monitor DPI to line up with what XAML draws.
-        WindowHelper.ApplyRoundedRegion(
-            _hwnd, width, height, Definition.Theme.CornerRadius * Math.Clamp(Definition.Scale, MinScale, MaxScale) * dpiScale);
+        if (applyRegion)
+        {
+            ApplyRoundedRegion(width, height, dpiScale);
+        }
     }
+
+    /// <summary>
+    /// The corner radius is authored in logical pixels against the unscaled widget, so it has to
+    /// track both the per-widget scale and the monitor DPI to line up with what XAML draws.
+    /// </summary>
+    private void ApplyRoundedRegion(int width, int height, double dpiScale)
+        => WindowHelper.ApplyRoundedRegion(
+            _hwnd,
+            width,
+            height,
+            Definition.Theme.CornerRadius * Math.Clamp(Definition.Scale, MinScale, MaxScale) * dpiScale);
 
     // ---- Dragging --------------------------------------------------------------
 
@@ -503,6 +519,10 @@ public sealed partial class WidgetHostWindow : Window
         _resizePreview.ScaleY = 1;
         Surface.RenderTransformOrigin = new Windows.Foundation.Point(0, 0);
         Surface.RenderTransform = _resizePreview;
+
+        // Dropped for the duration of the gesture so the window is neither clipped to the shape it
+        // started at nor re-regioned on every pointer sample. EndResize puts it back.
+        WindowHelper.ClearWindowRegion(_hwnd);
     }
 
     /// <summary>
@@ -545,7 +565,7 @@ public sealed partial class WidgetHostWindow : Window
         _resizePreview.ScaleX = factor;
         _resizePreview.ScaleY = factor;
 
-        PlaceWindow(x, y, width, height, _resizeDpi);
+        PlaceWindow(x, y, width, height, _resizeDpi, applyRegion: false);
 
         // Definition.Scale is already the live value, so the wallpaper layer stays registered with
         // the screen while the widget grows.
@@ -569,10 +589,15 @@ public sealed partial class WidgetHostWindow : Window
 
         if (Math.Abs(Definition.Scale - _resizeStartScale) < 0.001)
         {
+            // Nothing to persist, but the rounded corners BeginResize dropped still have to
+            // come back — otherwise a grab that went nowhere leaves the widget square.
+            var size = AppWindow.Size;
+            ApplyRoundedRegion(size.Width, size.Height, _resizeDpi);
             return;
         }
 
         // Rebuilds the content at the final scale and re-reads the monitor DPI the gesture froze.
+        // ApplyGeometry restores the region as part of placing the window.
         ApplyDefinition(Definition);
         DefinitionChanged?.Invoke(this, Definition);
     }
