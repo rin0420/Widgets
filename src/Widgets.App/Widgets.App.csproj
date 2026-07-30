@@ -30,6 +30,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.250916003" />
+    <!-- ETW consumer for the per-application frame rate (see FrameRateService). -->
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.16" />
   </ItemGroup>
 
   <ItemGroup>

@@ -32,11 +32,7 @@ public sealed class StartupService
 
                 if (value)
                 {
-                    var exePath = Environment.ProcessPath;
-                    if (!string.IsNullOrEmpty(exePath))
-                    {
-                        key.SetValue(ValueName, $"\"{exePath}\"");
-                    }
+                    Write(key);
                 }
                 else
                 {
@@ -48,5 +44,45 @@ public sealed class StartupService
                 Crash.Log(ex, "StartupService.IsEnabled.set");
             }
         }
+    }
+
+    /// <summary>
+    /// Rewrites the logon entry if it is stale — either pointing at a path the app has since moved
+    /// away from, or missing the startup argument that older builds did not pass.
+    /// </summary>
+    public void RepairRegistration()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true);
+            if (key?.GetValue(ValueName) is not string current)
+            {
+                return;
+            }
+
+            if (!string.Equals(current, Command(), StringComparison.OrdinalIgnoreCase))
+            {
+                Write(key);
+            }
+        }
+        catch (Exception ex)
+        {
+            Crash.Log(ex, "StartupService.RepairRegistration");
+        }
+    }
+
+    private static void Write(RegistryKey key)
+    {
+        var command = Command();
+        if (command.Length > 0)
+        {
+            key.SetValue(ValueName, command);
+        }
+    }
+
+    private static string Command()
+    {
+        var exePath = Environment.ProcessPath;
+        return string.IsNullOrEmpty(exePath) ? string.Empty : $"\"{exePath}\" {App.StartupArgument}";
     }
 }

@@ -56,6 +56,7 @@ public sealed partial class SettingsPage : Page
         FollowAnimatedWallpaperToggle.IsOn = Settings.FollowAnimatedWallpaper;
         MetricToggle.IsOn = Settings.UseMetric;
 
+        UpdateFrameRateStatus();
         UpdateLocationText();
         BuildSavedColors();
 
@@ -81,6 +82,55 @@ public sealed partial class SettingsPage : Page
         InfoBarControl.Severity = severity;
         InfoBarControl.Title = message;
         InfoBarControl.IsOpen = true;
+    }
+
+    private void UpdateFrameRateStatus()
+    {
+        var service = AppServices.FrameRate;
+
+        if (service.IsTracing)
+        {
+            FrameRateStatusText.Text = "前面アプリの実 FPS を計測しています。";
+            ElevateButton.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        FrameRateStatusText.Text = service.UnavailableReason
+            ?? "デスクトップ全体の描画レートを表示しています。";
+
+        ElevateButton.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// Relaunches through the shell with the "runas" verb so Windows shows the consent prompt.
+    /// The current instance exits so the single-instance guard lets the elevated one through.
+    /// </summary>
+    private void OnElevateClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var exePath = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exePath))
+            {
+                ShowInfo("実行ファイルの場所を特定できませんでした。", InfoBarSeverity.Error);
+                return;
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = exePath,
+                UseShellExecute = true,
+                Verb = "runas",
+            });
+
+            App.Instance.ExitApp();
+        }
+        catch (Exception ex)
+        {
+            // Cancelling the UAC prompt lands here; nothing is broken, so say so plainly.
+            Crash.Log(ex, "SettingsPage.OnElevateClick");
+            ShowInfo("管理者としての再起動をキャンセルしました。", InfoBarSeverity.Informational);
+        }
     }
 
     private void UpdateGridSizeHeader() => GridSizeSlider.Header = $"グリッドの間隔 {GridSizeSlider.Value:0} px";

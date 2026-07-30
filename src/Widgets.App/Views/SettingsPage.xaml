@@ -32,6 +32,15 @@
                     </StackPanel>
                 </Expander>
 
+                <Expander Header="フレームレート計測" IsExpanded="True" Style="{StaticResource SectionExpanderStyle}">
+                    <StackPanel Spacing="14" Padding="0,4,0,4">
+                        <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}"
+                                   Text="ゲームなど前面アプリの実 FPS は Windows の ETW から読み取ります。ETW セッションの作成には管理者権限が必要で、権限が無いときはデスクトップ全体の描画レートに切り替わります。" />
+                        <TextBlock x:Name="FrameRateStatusText" TextWrapping="Wrap" FontWeight="SemiBold" />
+                        <Button x:Name="ElevateButton" Content="管理者として再起動" Click="OnElevateClick" />
+                    </StackPanel>
+                </Expander>
+
                 <Expander Header="ウィジェットの配置" IsExpanded="True" Style="{StaticResource SectionExpanderStyle}">
                     <StackPanel Spacing="14" Padding="0,4,0,4">
                         <ComboBox x:Name="SnapCombo" Header="スナップ" Width="260"

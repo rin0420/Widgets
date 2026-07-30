@@ -22,7 +22,10 @@ param(
 
     # 実行中の dist\app\Widgets.exe を終了させてから publish する。
     # 指定しない場合、実行中なら中断する（使用中のファイルを半端に上書きしないため）。
-    [switch]$StopRunning
+    [switch]$StopRunning,
+
+    # デスクトップのショートカットを作り直さない。
+    [switch]$SkipDesktopShortcut
 )
 
 $ErrorActionPreference = 'Stop'
@@ -123,6 +126,22 @@ $link.WorkingDirectory = $appDir
 $link.IconLocation     = "$exePath,0"
 $link.Description      = 'Widgets - デスクトップウィジェット'
 $link.Save()
+
+# デスクトップにも同じショートカットを置く。dist を開かずに起動できるようにするため。
+if (-not $SkipDesktopShortcut) {
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    $desktopLink = Join-Path $desktop 'Widgets.lnk'
+
+    $link2 = $shell.CreateShortcut($desktopLink)
+    $link2.TargetPath       = $exePath
+    $link2.WorkingDirectory = $appDir
+    $link2.IconLocation     = "$exePath,0"
+    $link2.Description      = 'Widgets - デスクトップウィジェット'
+    $link2.Save()
+
+    Write-Host "デスクトップにショートカットを作成しました: $desktopLink" -ForegroundColor Cyan
+}
+
 [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell)
 
 # --- 案内テキスト -------------------------------------------------------------

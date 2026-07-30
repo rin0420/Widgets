@@ -382,9 +382,16 @@ public sealed partial class GpuMonitorWidget : WidgetViewBase
             {
                 var name = _showGpuName && HardwareInfo.GpuName.Length > 0 ? HardwareInfo.GpuName : "GPU";
 
-                _caption.Text = _showFps && stats.HasFrameRate
-                    ? $"{name} ・ {stats.Fps:0} fps"
-                    : name;
+                // Naming the process makes it obvious the number is that app's own frame rate,
+                // rather than the desktop-wide fallback.
+                _caption.Text = (_showFps, stats.FpsSource) switch
+                {
+                    (true, FrameRateSource.Application) when stats.FpsProcessName.Length > 0
+                        => $"{stats.FpsProcessName} ・ {stats.Fps:0} fps",
+                    (true, FrameRateSource.Application) => $"{name} ・ {stats.Fps:0} fps",
+                    (true, FrameRateSource.Composition) => $"{name} ・ {stats.Fps:0} fps（デスクトップ）",
+                    _ => name,
+                };
 
                 _caption.Foreground = new SolidColorBrush(WidgetVisuals.Secondary(theme));
             }
