@@ -26,7 +26,7 @@
 
         <StackPanel Spacing="4">
             <TextBlock Text="ギャラリー" Style="{StaticResource PageTitleTextStyle}" />
-            <TextBlock Text="追加したいウィジェットを選ぶと、サイズを選んでそのまま編集できます。"
+            <TextBlock Text="ウィジェットを選ぶとすぐに追加され、そのまま編集画面へ移ります。サイズは編集画面で変更できます。"
                        Style="{StaticResource CaptionTextStyle}" />
         </StackPanel>
 

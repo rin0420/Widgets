@@ -27,7 +27,8 @@
 
         <StackPanel Spacing="4">
             <TextBlock Text="テーマ" Style="{StaticResource PageTitleTextStyle}" />
-            <TextBlock Text="デザインのプリセットです。カードから既存のウィジェットへ適用できます。"
+            <TextBlock Text="配色と文字づかいのプリセットです。適用しても新しいウィジェットは追加されません。既存のウィジェット全部か、選んだ1つだけに適用できます。"
+                       TextWrapping="Wrap"
                        Style="{StaticResource CaptionTextStyle}" />
         </StackPanel>
 

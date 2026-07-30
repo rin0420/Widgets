@@ -113,43 +113,18 @@ public sealed partial class GalleryPage : Page
             Content = layout,
         };
 
-        card.Click += async (_, _) => await CreateWidgetAsync(entry);
+        card.Click += (_, _) => CreateWidget(entry);
         return card;
     }
 
-    private async Task CreateWidgetAsync(WidgetCatalogEntry entry)
+    /// <summary>
+    /// Adds the widget at its default size and goes straight to the editor. There used to be a
+    /// size dialog here, but the editor already has a size picker at the top of the preview and
+    /// a drag-resizable frame, so asking up front was one modal in the way of every add.
+    /// </summary>
+    private void CreateWidget(WidgetCatalogEntry entry)
     {
-        var selector = new RadioButtons { MaxColumns = 3 };
-
-        foreach (var option in entry.SupportedSizes)
-        {
-            var (width, height) = WidgetMetrics.GetSize(option);
-            selector.Items.Add(new RadioButton
-            {
-                Content = $"{WidgetMetrics.GetDisplayName(option)}（{width:0}×{height:0}）",
-                Tag = option,
-            });
-        }
-
-        selector.SelectedIndex = 0;
-
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = $"{entry.DisplayName} のサイズ",
-            Content = selector,
-            PrimaryButtonText = "追加",
-            CloseButtonText = "キャンセル",
-            DefaultButton = ContentDialogButton.Primary,
-        };
-
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
-        {
-            return;
-        }
-
-        var size = selector.SelectedItem is RadioButton { Tag: WidgetSize picked } ? picked : entry.SupportedSizes[0];
-        var definition = WidgetCatalog.CreateDefinition(entry.Kind, size);
+        var definition = WidgetCatalog.CreateDefinition(entry.Kind, entry.SupportedSizes[0]);
 
         AppServices.Store.Add(definition);
         MainWindow.Instance?.NavigateToEditor(definition);

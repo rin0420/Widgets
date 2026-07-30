@@ -27,6 +27,32 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# --- .NET 11 SDK の解決 --------------------------------------------------------
+# 本体は net11.0 を対象にしている。.NET 11 SDK をユーザー領域 (%USERPROFILE%\.dotnet)
+# へ入れた場合 PATH には載らないので、PATH 上の dotnet が古ければそちらへ切り替える。
+function Resolve-Dotnet {
+    $candidates = @()
+
+    $onPath = (Get-Command dotnet -ErrorAction SilentlyContinue).Source
+    if ($onPath) { $candidates += $onPath }
+
+    $userLocal = Join-Path $env:USERPROFILE '.dotnet\dotnet.exe'
+    if (Test-Path $userLocal) { $candidates += $userLocal }
+
+    foreach ($candidate in $candidates) {
+        $sdks = & $candidate --list-sdks 2>$null
+        if ($sdks -match '^11\.') { return $candidate }
+    }
+
+    throw ".NET 11 SDK が見つかりません。https://dotnet.microsoft.com/download から入れるか、" +
+          "次のコマンドでユーザー領域へ入れてください:`n" +
+          "  & ([scriptblock]::Create((irm https://dot.net/v1/dotnet-install.ps1))) -Channel 11.0 -Quality preview"
+}
+
+$dotnet = Resolve-Dotnet
+$env:DOTNET_ROOT = Split-Path -Parent $dotnet
+Write-Host "dotnet: $dotnet" -ForegroundColor DarkGray
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $project  = Join-Path $repoRoot 'src\Widgets.App\Widgets.App.csproj'
 $dist     = Join-Path $repoRoot 'dist'
@@ -69,7 +95,7 @@ New-Item -ItemType Directory -Path $appDir -Force | Out-Null
 # --- publish ------------------------------------------------------------------
 Write-Host "publish: $Configuration / $Runtime -> dist\app" -ForegroundColor Cyan
 
-& dotnet publish $project `
+& $dotnet publish $project `
     -c $Configuration `
     -r $Runtime `
     --self-contained true `

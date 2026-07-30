@@ -30,8 +30,24 @@
                            VerticalAlignment="Center" />
             </StackPanel>
 
-            <RadioButtons x:Name="SizeSelector" Grid.Row="1" Margin="0,12,0,0"
-                          MaxColumns="5" SelectionChanged="OnSizeSelectorChanged" />
+            <Grid Grid.Row="1" Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <RadioButtons x:Name="SizeSelector" MaxColumns="5"
+                              SelectionChanged="OnSizeSelectorChanged" />
+
+                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Bottom"
+                            HorizontalAlignment="Right" Margin="12,0,0,0">
+                    <TextBlock x:Name="PreviewSizeText" HorizontalAlignment="Right"
+                               FontWeight="SemiBold" />
+                    <TextBlock Text="枠のハンドルをドラッグすると微調整できます"
+                               HorizontalAlignment="Right"
+                               Style="{StaticResource CaptionTextStyle}" />
+                </StackPanel>
+            </Grid>
 
             <Border x:Name="PreviewBackdrop" Grid.Row="2" Margin="0,12,0,0"
                     CornerRadius="12"

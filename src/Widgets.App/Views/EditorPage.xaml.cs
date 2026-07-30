@@ -1,6 +1,7 @@
 ﻿using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Widgets.App.Common;
@@ -37,11 +38,25 @@ public sealed partial class EditorPage : Page
 
     private readonly List<WidgetSurface> _presetSurfaces = new();
 
+    /// <summary>Diameter of the eight drag handles drawn around the preview.</summary>
+    private const double HandleSize = 14;
+
     private WidgetDefinition _definition = null!;
     private WidgetDefinition _snapshot = null!;
     private WidgetSurface? _surface;
     private Grid? _previewOuter;
     private Grid? _previewInner;
+    private Grid? _previewFrame;
+
+    // ---- preview resize drag ----------------------------------------------------
+    // The pointer is tracked against PreviewBackdrop rather than against the handle itself:
+    // the handles move as the preview grows, so handle-relative deltas would feed back into
+    // themselves and make the resize accelerate.
+    private Border? _resizeHandle;
+    private Windows.Foundation.Point _resizeOrigin;
+    private double _resizeStartScale;
+    private double _resizeDirectionX;
+    private double _resizeDirectionY;
     /// <summary>
     /// Starts true so the control event handlers stay inert until <see cref="OnNavigatedTo"/> has
     /// supplied a definition — configuring the slider ranges in the constructor raises ValueChanged
@@ -70,7 +85,8 @@ public sealed partial class EditorPage : Page
             slider.StepFrequency = step;
         }
 
-        Configure(ScaleSlider, 0.5, 3.0, 0.05);
+        // 0.01 so the slider can land on exactly the value a handle drag produced.
+        Configure(ScaleSlider, 0.5, 3.0, 0.01);
         Configure(FontScaleSlider, 0.5, 2.0, 0.05);
         Configure(OpacitySlider, 0.1, 1.0, 0.05);
         Configure(BackgroundImageOpacitySlider, 0.1, 1.0, 0.05);
@@ -237,27 +253,18 @@ public sealed partial class EditorPage : Page
 
         if (_surface is null)
         {
-            _surface = new WidgetSurface();
-            _previewInner = new Grid { RenderTransformOrigin = new Windows.Foundation.Point(0, 0) };
-            _previewInner.Children.Add(_surface);
-
-            _previewOuter = new Grid
-            {
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
-            _previewOuter.Children.Add(_previewInner);
-            PreviewHost.Children.Add(_previewOuter);
+            BuildPreviewFrame();
         }
 
         var (width, height) = WidgetMetrics.GetSize(_definition.Size);
 
-        var availableWidth = Math.Max(160, PreviewBackdrop.ActualWidth - 64);
-        var availableHeight = Math.Max(160, PreviewBackdrop.ActualHeight - 64);
+        // Leave room for the handles, which straddle the edge and stick out by half their size.
+        var margin = 64 + HandleSize;
+        var availableWidth = Math.Max(160, PreviewBackdrop.ActualWidth - margin);
+        var availableHeight = Math.Max(160, PreviewBackdrop.ActualHeight - margin);
         var scale = Math.Min(_definition.Scale, Math.Min(availableWidth / width, availableHeight / height));
 
-        _surface.Width = width;
+        _surface!.Width = width;
         _surface.Height = height;
         _previewInner!.Width = width;
         _previewInner.Height = height;
@@ -266,6 +273,181 @@ public sealed partial class EditorPage : Page
         _previewOuter.Height = height * scale;
 
         _surface.SetDefinition(_definition, true);
+
+        UpdatePreviewSizeText();
+    }
+
+    /// <summary>
+    /// Builds the preview and the resize frame around it once. The frame is a plain Grid whose size
+    /// comes from the preview, with a dashed outline and eight handles hung off it by negative
+    /// margins so they straddle the edge.
+    /// </summary>
+    private void BuildPreviewFrame()
+    {
+        PreviewHost.Children.Clear();
+
+        _surface = new WidgetSurface();
+
+        // Anchored top-left, not stretched: the ScaleTransform below grows from (0,0), so a
+        // centred child would be offset by half the growth and drift out of the resize frame.
+        _previewInner = new Grid
+        {
+            RenderTransformOrigin = new Windows.Foundation.Point(0, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+        };
+
+        _previewInner.Children.Add(_surface);
+
+        _previewOuter = new Grid
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        _previewOuter.Children.Add(_previewInner);
+
+        var outline = new Microsoft.UI.Xaml.Shapes.Rectangle
+        {
+            Stroke = ColorUtil.Brush("#B3FFFFFF"),
+            StrokeThickness = 1,
+            StrokeDashArray = new DoubleCollection { 4, 3 },
+            RadiusX = 4,
+            RadiusY = 4,
+            Fill = null,
+            Margin = new Thickness(-4),
+            IsHitTestVisible = false,
+        };
+
+        _previewFrame = new Grid
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        _previewFrame.Children.Add(_previewOuter);
+        _previewFrame.Children.Add(outline);
+
+        const double Offset = -HandleSize / 2;
+
+        AddHandle(HorizontalAlignment.Left, VerticalAlignment.Top, new Thickness(Offset, Offset, 0, 0), -1, -1);
+        AddHandle(HorizontalAlignment.Center, VerticalAlignment.Top, new Thickness(0, Offset, 0, 0), 0, -1);
+        AddHandle(HorizontalAlignment.Right, VerticalAlignment.Top, new Thickness(0, Offset, Offset, 0), 1, -1);
+        AddHandle(HorizontalAlignment.Left, VerticalAlignment.Center, new Thickness(Offset, 0, 0, 0), -1, 0);
+        AddHandle(HorizontalAlignment.Right, VerticalAlignment.Center, new Thickness(0, 0, Offset, 0), 1, 0);
+        AddHandle(HorizontalAlignment.Left, VerticalAlignment.Bottom, new Thickness(Offset, 0, 0, Offset), -1, 1);
+        AddHandle(HorizontalAlignment.Center, VerticalAlignment.Bottom, new Thickness(0, 0, 0, Offset), 0, 1);
+        AddHandle(HorizontalAlignment.Right, VerticalAlignment.Bottom, new Thickness(0, 0, Offset, Offset), 1, 1);
+
+        PreviewHost.Children.Add(_previewFrame);
+    }
+
+    private void AddHandle(
+        HorizontalAlignment horizontal,
+        VerticalAlignment vertical,
+        Thickness margin,
+        double directionX,
+        double directionY)
+    {
+        var handle = new Border
+        {
+            Width = HandleSize,
+            Height = HandleSize,
+            HorizontalAlignment = horizontal,
+            VerticalAlignment = vertical,
+            Margin = margin,
+            CornerRadius = new CornerRadius(HandleSize / 2),
+            Background = ColorUtil.Brush("#FFFFFFFF"),
+            BorderBrush = ColorUtil.Brush("#FF4CC2FF"),
+            BorderThickness = new Thickness(2),
+        };
+
+        ToolTipService.SetToolTip(handle, "ドラッグしてサイズを微調整");
+
+        handle.PointerPressed += (sender, args) => OnHandlePressed((Border)sender, directionX, directionY, args);
+        handle.PointerMoved += OnHandleMoved;
+        handle.PointerReleased += OnHandleReleased;
+        handle.PointerCaptureLost += OnHandleReleased;
+
+        _previewFrame!.Children.Add(handle);
+    }
+
+    private void OnHandlePressed(Border handle, double directionX, double directionY, PointerRoutedEventArgs e)
+    {
+        if (_definition is null || !handle.CapturePointer(e.Pointer))
+        {
+            return;
+        }
+
+        _resizeHandle = handle;
+        _resizeDirectionX = directionX;
+        _resizeDirectionY = directionY;
+        _resizeStartScale = _definition.Scale;
+        _resizeOrigin = e.GetCurrentPoint(PreviewBackdrop).Position;
+
+        e.Handled = true;
+    }
+
+    private void OnHandleMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (_resizeHandle is null || !ReferenceEquals(_resizeHandle, sender) || _definition is null)
+        {
+            return;
+        }
+
+        var (baseWidth, baseHeight) = WidgetMetrics.GetSize(_definition.Size);
+        var position = e.GetCurrentPoint(PreviewBackdrop).Position;
+
+        // The preview is centred, so an edge dragged by d changes the whole box by 2d.
+        var deltaX = (position.X - _resizeOrigin.X) * _resizeDirectionX * 2 / baseWidth;
+        var deltaY = (position.Y - _resizeOrigin.Y) * _resizeDirectionY * 2 / baseHeight;
+
+        var delta = _resizeDirectionX != 0 && _resizeDirectionY != 0
+            ? (deltaX + deltaY) / 2                       // corner: average both axes
+            : _resizeDirectionX != 0 ? deltaX : deltaY;   // edge: the axis it can move on
+
+        SetScale(_resizeStartScale + delta);
+        e.Handled = true;
+    }
+
+    private void OnHandleReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (_resizeHandle is null || !ReferenceEquals(_resizeHandle, sender))
+        {
+            return;
+        }
+
+        var handle = _resizeHandle;
+        _resizeHandle = null;
+        handle.ReleasePointerCapture(e.Pointer);
+    }
+
+    /// <summary>Writes a scale from any source (drag or slider) through to the definition and the UI.</summary>
+    private void SetScale(double value)
+    {
+        var scale = Math.Clamp(Math.Round(value, 2), ScaleSlider.Minimum, ScaleSlider.Maximum);
+
+        if (Math.Abs(scale - _definition.Scale) < 0.0001)
+        {
+            return;
+        }
+
+        _definition.Scale = scale;
+
+        _loading = true;
+        ScaleSlider.Value = scale;
+        _loading = false;
+
+        UpdateScaleHeader();
+        Apply();
+    }
+
+    private void UpdatePreviewSizeText()
+    {
+        var (width, height) = WidgetMetrics.GetSize(_definition.Size);
+        var scale = _definition.Scale;
+
+        PreviewSizeText.Text = $"{width * scale:0} × {height * scale:0} px（×{scale:0.00}）";
     }
 
     private void OnPreviewBackdropSizeChanged(object sender, SizeChangedEventArgs e) => RefreshPreview();
