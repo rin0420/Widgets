@@ -26,7 +26,21 @@
     <WindowsSdkPackageVersion>10.0.19041.57</WindowsSdkPackageVersion>
     <DefaultLanguage>ja-JP</DefaultLanguage>
     <NoWarn>$(NoWarn);CS1591;NETSDK1206</NoWarn>
+
+    <!-- This sits in the tray all day, so footprint matters more than allocation throughput.
+         Workstation GC is already the default, but background GC keeps a spare heap and a thread
+         alive purely to shorten pauses nobody can see in a widget. TieredPGO's instrumentation
+         is likewise not worth its memory here. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <RetainVMGarbageCollection>false</RetainVMGarbageCollection>
+    <TieredPGO>false</TieredPGO>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Trades a little GC time for a smaller heap; the sweet spot for a background app. -->
+    <RuntimeHostConfigurationOption Include="System.GC.Conserve" Value="5" Trim="false" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.250916003" />

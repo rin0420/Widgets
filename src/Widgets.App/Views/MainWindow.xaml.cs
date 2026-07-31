@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using Widgets.App.Common;
 using Widgets.App.Models;
 using Widgets.App.Services;
 using Windows.Graphics;
@@ -47,7 +48,26 @@ public sealed partial class MainWindow : Window
 
         App.Hosts.EditRequested += OnEditRequested;
         AppServices.Store.SettingsChanged += OnSettingsChanged;
+        AppWindow.Changed += OnAppWindowChanged;
         Closed += OnClosed;
+    }
+
+    /// <summary>
+    /// Rebuilds the page after <see cref="ReleaseContent"/> dropped it.
+    ///
+    /// This hangs off AppWindow.Changed rather than Window.VisibilityChanged: the window is put
+    /// away with AppWindow.Hide, and the Window-level event does not fire for that at all — a
+    /// manager that reappears blank is worse than one that never released anything.
+    /// </summary>
+    private void OnAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
+    {
+        if (!args.DidVisibilityChange || !sender.IsVisible || ContentFrame.Content is not null)
+        {
+            return;
+        }
+
+        var tag = (NavView.SelectedItem as NavigationViewItem)?.Tag as string;
+        ContentFrame.Navigate(PageFor(tag), null, new EntranceNavigationTransitionInfo());
     }
 
     private void ApplyBackdrop()
@@ -108,12 +128,47 @@ public sealed partial class MainWindow : Window
 
         args.Cancel = true;
         sender.Hide();
+        ReleaseContent();
     }
+
+    /// <summary>
+    /// Drops the page the manager was showing and gives the memory back.
+    ///
+    /// Hiding a window keeps its whole visual tree alive. The gallery in particular holds sixteen
+    /// live widget surfaces with running timers, and none of that is worth keeping while the app
+    /// sits in the tray. <see cref="BringToFront"/> navigates again when the window comes back.
+    /// </summary>
+    private void ReleaseContent()
+    {
+        try
+        {
+            // Navigating to null runs the pages' Unloaded handlers, which is what releases the
+            // preview surfaces; clearing Content alone would not.
+            ContentFrame.Content = null;
+            ContentFrame.BackStack.Clear();
+            ContentFrame.ForwardStack.Clear();
+        }
+        catch (Exception ex)
+        {
+            Crash.Log(ex, "MainWindow.ReleaseContent");
+        }
+
+        MemoryTrim.Release();
+    }
+
+    private static Type PageFor(string? tag) => tag switch
+    {
+        "gallery" => typeof(GalleryPage),
+        "themes" => typeof(ThemesPage),
+        "settings" => typeof(SettingsPage),
+        _ => typeof(MyWidgetsPage),
+    };
 
     private void OnClosed(object sender, WindowEventArgs args)
     {
         App.Hosts.EditRequested -= OnEditRequested;
         AppServices.Store.SettingsChanged -= OnSettingsChanged;
+        AppWindow.Changed -= OnAppWindowChanged;
 
         if (ReferenceEquals(Instance, this))
         {
@@ -135,13 +190,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var target = (item.Tag as string) switch
-        {
-            "gallery" => typeof(GalleryPage),
-            "themes" => typeof(ThemesPage),
-            "settings" => typeof(SettingsPage),
-            _ => typeof(MyWidgetsPage),
-        };
+        var target = PageFor(item.Tag as string);
 
         if (ContentFrame.CurrentSourcePageType != target)
         {

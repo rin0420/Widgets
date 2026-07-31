@@ -417,13 +417,8 @@ public sealed class WidgetSurface : ContentControl
                 return;
             }
 
-            var image = new BitmapImage();
-            using (var stream = await FileRandomAccessStream.OpenAsync(path, FileAccessMode.Read))
-            {
-                await image.SetSourceAsync(stream);
-            }
-
-            if (token != _wallpaperToken || !_wallpaperWanted)
+            var image = await LoadSharedWallpaperAsync(path);
+            if (image is null || token != _wallpaperToken || !_wallpaperWanted)
             {
                 return;
             }
@@ -435,6 +430,79 @@ public sealed class WidgetSurface : ContentControl
         catch (Exception ex)
         {
             Crash.Log(ex, "WidgetSurface.LoadWallpaper");
+        }
+    }
+
+    /// <summary>
+    /// One decoded bitmap per wallpaper file, shared by every surface.
+    ///
+    /// Each widget used to decode its own copy: four Mica widgets on a 1080p desktop is roughly
+    /// 33 MB of identical bitmaps. Every surface lives on the same UI thread, so one BitmapImage
+    /// can back all of their Image elements. Keying on the file's write time makes the entry
+    /// self-invalidating — the service rewrites these files whenever the wallpaper changes.
+    /// </summary>
+    private static readonly Dictionary<(string Path, long Version), Task<BitmapImage>> WallpaperCache = new();
+
+    private static Task<BitmapImage>? LoadSharedWallpaperTask(string path)
+    {
+        long version;
+        try
+        {
+            version = File.GetLastWriteTimeUtc(path).Ticks;
+        }
+        catch (Exception ex)
+        {
+            Crash.Log(ex, "WidgetSurface.WallpaperVersion");
+            return null;
+        }
+
+        var key = (path, version);
+        if (WallpaperCache.TryGetValue(key, out var existing))
+        {
+            return existing;
+        }
+
+        // Drop older revisions of the same file so a wallpaper slideshow does not accumulate.
+        foreach (var stale in WallpaperCache.Keys.Where(k => k.Path == path).ToList())
+        {
+            WallpaperCache.Remove(stale);
+        }
+
+        var task = DecodeAsync(path);
+        WallpaperCache[key] = task;
+        return task;
+    }
+
+    private static async Task<BitmapImage> DecodeAsync(string path)
+    {
+        var image = new BitmapImage();
+        using var stream = await FileRandomAccessStream.OpenAsync(path, FileAccessMode.Read);
+        await image.SetSourceAsync(stream);
+        return image;
+    }
+
+    private static async Task<BitmapImage?> LoadSharedWallpaperAsync(string path)
+    {
+        var task = LoadSharedWallpaperTask(path);
+        if (task is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await task;
+        }
+        catch (Exception ex)
+        {
+            // A failed decode must not be cached, or every surface would keep replaying it.
+            Crash.Log(ex, "WidgetSurface.DecodeWallpaper");
+            foreach (var key in WallpaperCache.Where(p => ReferenceEquals(p.Value, task)).Select(p => p.Key).ToList())
+            {
+                WallpaperCache.Remove(key);
+            }
+
+            return null;
         }
     }
 
